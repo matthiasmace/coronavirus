@@ -6,6 +6,7 @@ library(shinythemes)
 library(wbstats)
 library(countrycode)
 library(R0)
+library(rworldmap)
 
 covdat <- fread('https://covid.ourworldindata.org/data/ecdc/full_data.csv')
 covdat[is.na(covdat)] <- 0
@@ -25,7 +26,9 @@ covdat$new_deaths_percapita <- covdat$new_deaths / covdat$population
 covdat$total_cases_percapita <- covdat$total_cases / covdat$population
 covdat$total_deaths_percapita <- covdat$total_deaths / covdat$population
 
-countries_max_cases <- aggregate(covdat$total_cases, by=list(Category=covdat$location), FUN=max)
+countries_max_cases <- aggregate(covdat$total_cases, by = list(Category = covdat$location), FUN = max)
+countries_total_cases <- aggregate(covdat$new_deaths, by = list(Category = covdat$location), FUN = sum)
+names(countries_total_cases) <- c("Country", "Total_deaths")
 # select only countries with 100 or more cases
 countries <- countries_max_cases[countries_max_cases$x>=1,]$Category
 
@@ -87,7 +90,9 @@ ui <- fluidPage(#theme = shinytheme("flatly"),
                    checkboxInput(inputId="sync",
                                  label = "Synchronize national epidemics", value = FALSE),
                    checkboxInput(inputId="R0",
-                                 label = "Sliding R0 computation", value = FALSE)
+                                 label = "Sliding R0 computation", value = FALSE),
+                   checkboxInput(inputId="map",
+                                 label = "World Map", value = FALSE)
                   ),
       mainPanel(width = 9,
                 fluidRow(
@@ -115,6 +120,23 @@ server <- function(input, output, session) {
   # 2. Its output type is a plot
   output$distPlot <- renderPlot({
 ###############################
+    if(input$map){
+    sPDF <- joinCountryData2Map( countries_total_cases
+    , joinCode = "NAME"
+    , nameJoinColumn = "Country")
+    #creating a user defined colour palette
+    op <- palette(c("green", "yellow", "orange", "red"))
+    #find quartile breaks
+    cutVector <- quantile(sPDF@data[["Total_deaths"]],na.rm=TRUE)
+    sPDF@data[["Deaths_categories"]] <- cut(sPDF@data[["Total_deaths"]]
+     , breaks = 4
+#    , cutVector
+#    , include.lowest=TRUE
+      )
+    levels(sPDF@data[["Deaths_categories"]]) <- c("low","med", "high", "vhigh")
+    }
+
+
     if(input$R0){
     DAT.0 = covdat[covdat$location %in% input$countries_sel, c("date", "location", "new_deaths")]
     mGT<-generation.time("gamma", c(3, 1.5))
@@ -272,6 +294,17 @@ server <- function(input, output, session) {
         }
       }
 
+if(input$map){
+myplot <- mapCountryData( sPDF
+ , nameColumnToPlot="Deaths_categories"
+ , catMethod="categorical"
+ , mapTitle="Deaths Toll"
+ , colourPalette="palette"
+ , oceanCol="lightblue"
+ , missingCountryCol="white"
+ )
+
+}
 
     if(input$log)
       myplot <- myplot + scale_y_log10()
