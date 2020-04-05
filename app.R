@@ -7,6 +7,10 @@ library(wbstats)
 library(countrycode)
 library(R0)
 library(rworldmap)
+library(countrycode)
+library(tidyr)
+library(dplyr)
+library(RColorBrewer)
 #
 options(shiny.sanitize.errors = TRUE)
 #
@@ -28,21 +32,17 @@ covdat$new_deaths_percapita <- covdat$new_deaths / covdat$population
 covdat$total_cases_percapita <- covdat$total_cases / covdat$population
 covdat$total_deaths_percapita <- covdat$total_deaths / covdat$population
 
+countries_max_cases <- aggregate(covdat$total_cases, by=list(Category=covdat$location), FUN=max)
+
 # map data
-map.df <- pop_data[, c("iso2c", "value")]
-map.df <- dplyr::inner_join(map.df, aggregate(covdat[, c("iso2c", "total_cases")], by = list(Category = covdat$location), FUN = max))[, c("iso2c", "value", "total_cases")]
-map.df <- dplyr::inner_join(map.df, aggregate(covdat[, c("iso2c", "total_deaths")], by = list(Category = covdat$location), FUN = max))[, c("iso2c", "value", "total_cases", "total_deaths")]
-names(map.df) <- c("iso2c", "population", "cases", "deaths")
-map.df$cases_percapita <- map.df$cases/map.df$population
-map.df$deaths_percapita <- map.df$deaths/map.df$population
-#
-merge(covdat, pop_data[,c('iso2c', 'value')], by='iso2c')
-countries_total_deaths_percapita <- (aggregate(covdat$new_deaths, by = list(Category = covdat$location), FUN = sum))/ covdat$population
-names(countries_total_deaths_percapita) <- c("Country", "Total_deaths")
-countries_total_cases_percapita <- countries_total_cases/ covdat$population
-names(countries_total_cases_percapita) <- c("Country", "Total_cases")
 
-
+#map.df <- pop_data[, c("iso2c", "value")]
+#map.df <- dplyr::inner_join(map.df, aggregate(covdat[, c("iso2c", "total_cases")], by = list(Category = covdat$location), FUN = max))[, c("iso2c", "value", "total_cases")]
+#map.df <- dplyr::inner_join(map.df, aggregate(covdat[, c("iso2c", "total_deaths")], by = list(Category = covdat$location), FUN = max))[, c("iso2c", "value", "total_cases", "total_deaths")]
+#names(map.df) <- c("iso2c", "population", "cases", "deaths")
+#map.df$cases_percapita <- map.df$cases/map.df$population
+#map.df$deaths_percapita <- map.df$deaths/map.df$population
+load("map.df.2.RData")
 
 # select only countries with 100 or more cases
 countries <- countries_max_cases[countries_max_cases$x>=1,]$Category
@@ -76,7 +76,7 @@ ui <- fluidPage(#theme = shinytheme("flatly"),
   ),
   fluidRow(
     sidebarLayout(
-      sidebarPanel(width = 2,
+      sidebarPanel(width = 3,
                    radioButtons(inputId = "data_column",
                    label = "Data to show:",
                    choices = c("Total cases" = "total_cases",
@@ -105,11 +105,26 @@ ui <- fluidPage(#theme = shinytheme("flatly"),
                    checkboxInput(inputId="dailyscale",
                                  label = "Plot daily breaks on x axis", value = FALSE),
                    checkboxInput(inputId="sync",
-                                 label = "Synchronize national epidemics", value = FALSE),
-                   checkboxInput(inputId="R0",
-                                 label = "Sliding R0 computation", value = FALSE),
-                   checkboxInput(inputId="map",
-                                 label = "World Map", value = FALSE)
+                                 label = "Synchronize national epidemics", value = FALSE)
+                  , numericInput(inputId = "num.min"
+                                , label = "minimal cases/deaths to begin with"
+                                , value = 10
+                                )
+                   , checkboxInput(inputId="R0",
+                                 label = "Sliding R0 computation", value = FALSE)
+                  , checkboxInput(inputId="map"
+                                 , label = "World Map"
+                                 , value = FALSE)
+                  , checkboxInput(inputId="corrmap",
+                                  label = "Cross-Correlations", value = FALSE)
+                  , strong("Select Socio-Economic Variable to Compare")
+                  , selectizeInput(inputId = "socialvar"
+                                , label = "Select variable"
+                                , choices = c("NONE",
+                                names(map.df.2)[-c(1:3)]
+                                )
+                                , selected = c("NONE")
+                                )
                   ),
       mainPanel(width = 9,
                 fluidRow(
@@ -137,74 +152,40 @@ server <- function(input, output, session) {
   # 2. Its output type is a plot
   output$distPlot <- renderPlot({
 ###############################
-    if(input$map){
-      sPDF <- joinCountryData2Map(map.df
-      , joinCode = "ISO2"
-      , nameJoinColumn = "iso2c")
-      #creating a user defined colour palette
-      op <- palette(c("green", "yellow", "orange", "red"))
-      #
-        if(input$percapita){
-          if(input$data_column == "total_cases"){
-           col = "cases_percapita"
-            cutVector <- quantile(sPDF@data[[col]],na.rm=TRUE)
-            sPDF@data[["data_to_plot"]] <- cut(sPDF@data[[col]]
-            , breaks = 4
+
+      if(input$map){
+        sPDF <- joinCountryData2Map(map.df.2
+        , joinCode = "ISO2"
+        , nameJoinColumn = "iso2c")
+        # creating a user defined colour palette
+        # op <- palette(c("green", "yellow", "orange", "red"))
+        #
+        if(input$socialvar == "NONE"){
+            var = input$data_column
+            sPDF@data[["data_to_plot"]] <- sPDF@data[[var]]
+            # sPDF@data[["data_to_plot"]] <- cut(sPDF@data[[var]]
+            #    , breaks = 4
             #    , cutVector
             #    , include.lowest=TRUE
-              )
-              levels(sPDF@data[["data_to_plot"]]) <- c("low","med", "high", "vhigh")
-          } else if(input$data_column == "total_deaths") {
-          col = "deaths_percapita"
-           cutVector <- quantile(sPDF@data[[col]],na.rm=TRUE)
-           sPDF@data[["data_to_plot"]] <- cut(sPDF@data[[col]]
-           , breaks = 4
-           #    , cutVector
-           #    , include.lowest=TRUE
-             )
-             levels(sPDF@data[["data_to_plot"]]) <- c("low","med", "high", "vhigh")
-             } else if(input$data_column == "total_deaths") {
-             col = "deaths"
-              cutVector <- quantile(sPDF@data[[col]],na.rm=TRUE)
-              sPDF@data[["data_to_plot"]] <- cut(sPDF@data[[col]]
-              , breaks = 4
-              #    , cutVector
-              #    , include.lowest=TRUE
-                )
-                levels(sPDF@data[["data_to_plot"]]) <- c("low","med", "high", "vhigh")
-             } else {}
-             } else {
-             if(input$data_column == "total_cases"){
-              col = "cases"
-               cutVector <- quantile(sPDF@data[[col]],na.rm=TRUE)
-               sPDF@data[["data_to_plot"]] <- cut(sPDF@data[[col]]
-               , breaks = 4
-               #    , cutVector
-               #    , include.lowest=TRUE
-                 )
-                 levels(sPDF@data[["data_to_plot"]]) <- c("low","med", "high", "vhigh")
-             } else if(input$data_column == "total_deaths") {
-             col = "deaths"
-              cutVector <- quantile(sPDF@data[[col]],na.rm=TRUE)
-              sPDF@data[["data_to_plot"]] <- cut(sPDF@data[[col]]
-              , breaks = 4
-              #    , cutVector
-              #    , include.lowest=TRUE
-                )
-                levels(sPDF@data[["data_to_plot"]]) <- c("low","med", "high", "vhigh")
-                } else if(input$data_column == "total_deaths") {
-                col = "deaths"
-                 cutVector <- quantile(sPDF@data[[col]],na.rm=TRUE)
-                 sPDF@data[["data_to_plot"]] <- cut(sPDF@data[[col]]
-                 , breaks = 4
-                 #    , cutVector
-                 #    , include.lowest=TRUE
-                   )
-                   levels(sPDF@data[["data_to_plot"]]) <- c("low","med", "high", "vhigh")
-                }
-             }
-            }
+            #  )
+            # levels(sPDF@data[["data_to_plot"]]) <- c("low","med", "high", "vhigh")
+            } else {
+            var <- input$data_column
+            social.var <- input$socialvar
+            sPDF@data[["data_to_plot"]] <- sPDF@data[[var]]/sPDF@data[[social.var]]
+            # sPDF@data[["data_to_plot"]] <- cut(sPDF@data[[var]]/sPDF@data[[social.var]]
+            #    , breaks = 4
+            #    , cutVector
+            #    , include.lowest=TRUE
+            #  )
+            #  levels(sPDF@data[["data_to_plot"]]) <- c("low","med", "high", "vhigh")
 
+            }
+          }
+
+      if(input$corrmap){
+
+            }
 
     if(input$R0){
     DAT.0 = covdat[covdat$location %in% input$countries_sel, c("date", "location", "new_deaths")]
@@ -285,7 +266,8 @@ server <- function(input, output, session) {
 ###############################
 
     if(input$sync){
-          before <- which(covdat$total_cases == 0)
+  #        before <- which(covdat$total_cases == 0)
+          before <- which(covdat$total_cases < input$num.min)
           covdat.sync <- covdat[-before, ]
           covdat.sync$J <- 0
           for (c in unique(covdat.sync$location)){
@@ -364,18 +346,32 @@ server <- function(input, output, session) {
       }
 
 if(input$map){
-  if(input$$data_column == "total_cases" | input$data_column == "total_deaths"){
-      myplot <- mapCountryData( sPDF
-      , nameColumnToPlot="data_to_plot"
-      , catMethod="categorical"
-      , mapTitle="Deaths Toll"
-      , colourPalette="palette"
-      , oceanCol="lightblue"
-      , missingCountryCol="white"
-      )
+  if(input$data_column == "total_cases" | input$data_column == "total_deaths"){
+      colourPalette <- rev(brewer.pal(10,'RdYlGn'))
+      if(input$socialvar == "NONE"){
+        myplot <- mapCountryData( sPDF
+        , nameColumnToPlot="data_to_plot"
+#            , catMethod="quantile"
+        , catMethod="logFixedWidth"
+        , mapTitle = var  #"Deaths Toll"
+        , colourPalette = colourPalette
+        , oceanCol="lightblue"
+        , missingCountryCol="white"
+        )
+      } else {
+        myplot <- mapCountryData( sPDF
+        , nameColumnToPlot="data_to_plot"
+#                 , catMethod="quantile"
+        , catMethod="logFixedWidth"
+        , mapTitle = paste(var, "/", social.var)#"Deaths Toll"
+        , colourPalette = colourPalette
+        , oceanCol="lightblue"
+        , missingCountryCol="white"
+        )
+      }
     } else {stop(safeError(("Incompatible Data to show / plot option combination")))}
-
 }
+
 
     if(input$log)
       myplot <- myplot + scale_y_log10()
