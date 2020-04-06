@@ -11,6 +11,8 @@ library(countrycode)
 library(tidyr)
 library(dplyr)
 library(RColorBrewer)
+library(corrgram)
+library(ggrepel)
 #
 options(shiny.sanitize.errors = TRUE)
 #
@@ -57,7 +59,7 @@ maxdate <- max(covdat$date)
 ui <- fluidPage(#theme = shinytheme("flatly"),
   fluidRow(
     column(12,
-      h1("SARS-CoV-2 pandemics data display & analysis Webpage", align="center"),
+      h1("SARS-CoV-2 pandemics data display & analysis Webpage for the people", align="center"),
       p("Data from",
               a("Our World in Data",
                 href="https://ourworldindata.org/coronavirus"),
@@ -65,66 +67,76 @@ ui <- fluidPage(#theme = shinytheme("flatly"),
               modifdate,
               "):",
               a("https://covid.ourworldindata.org/data/ecdc/full_data.csv",
-                href = "https://covid.ourworldindata.org/data/ecdc/full_data.csv"),
-              "| Shiny app by Tomasz Suchan & Matthias Macé",
-              a("@tomaszsuchan",
-                href="https://twitter.com/tomaszsuchan"),
-              a("| Matthias FB",
+                href = "https://covid.ourworldindata.org/data/ecdc/full_data.csv")
+          , "&"
+              , a("WorldBank"
+                , href="https://data.worldbank.org")
+          , "| Shiny app by Tomasz Suchan & Matthias Mace"
+              , a("@tomaszsuchan",
+                href="https://twitter.com/tomaszsuchan")
+              , a("| Matthias FB",
                 href="https://www.facebook.com/matthias.mace.5"),
-              align = "center")
+              align = "center"
+        )
     )
   ),
   fluidRow(
     sidebarLayout(
-      sidebarPanel(width = 3,
-                   radioButtons(inputId = "data_column",
-                   label = "Data to show:",
-                   choices = c("Total cases" = "total_cases",
-                                "New cases" = "new_cases",
-                                "Total deaths" = "total_deaths",
-                                "New deaths" = "new_deaths"
-                                ),
-                   selected = "total_cases"
-                   ),
-                   selectInput(inputId = "countries_sel",
-                               label = "Countries (with at least 1 case):",
-                               list('Europe' = unique(covdat[covdat$continent == 'Europe',]$location),
+      sidebarPanel(width = 3
+                   , radioButtons(inputId = "data_column"
+                                , label = "Data to show:"
+                                , choices = c("Total cases" = "total_cases"
+                                , "New cases" = "new_cases"
+                                , "Total deaths" = "total_deaths"
+                                , "New deaths" = "new_deaths"
+                                )
+                                , selected = "total_cases"
+                                )
+                   , selectInput(inputId = "countries_sel"
+                               , label = "Countries (with at least 1 case):"
+                               , list('Europe' = unique(covdat[covdat$continent == 'Europe',]$location),
                                     'Africa' = unique(covdat[covdat$continent == 'Africa',]$location),
                                     'Americas' = unique(covdat[covdat$continent == 'Americas',]$location),
                                     'Asia' = unique(covdat[covdat$continent == 'Asia',]$location),
                                     'Oceania' = unique(covdat[covdat$continent == 'Oceania',]$location)
-                                    ),
-                               selected = c("France", "Italy", "Germany", "Spain", "Poland", "South Korea"),
-                               multiple = TRUE
-                   ),
-                   strong("Plot options:"),
-                   checkboxInput(inputId="log",
-                                 label = "Plot y axis on log scale", value = FALSE),
-                   checkboxInput(inputId="percapita",
-                                 label = "Correct for population size", value = FALSE),
-                   checkboxInput(inputId="dailyscale",
-                                 label = "Plot daily breaks on x axis", value = FALSE),
-                   checkboxInput(inputId="sync",
-                                 label = "Synchronize national epidemics", value = FALSE)
+                                    )
+                               , selected = c("France", "Italy", "Germany", "Spain", "Poland", "South Korea")
+                               , multiple = TRUE
+                               )
+                   , strong("Plot options:")
+                   , em("For curves (multiple selections allowed)")
+                               , checkboxInput(inputId="log"
+                                 , label = "Plot y axis on log scale", value = FALSE)
+                               , checkboxInput(inputId="percapita",
+                                 label = "Correct for population size", value = FALSE)
+                  , checkboxInput(inputId="dailyscale",
+                                 label = "Plot daily breaks on x axis", value = FALSE)
+                  , checkboxInput(inputId="sync",
+                                 label = "Synchronize national epidemics (minimal cases/deaths to begin with)", value = FALSE)
                   , numericInput(inputId = "num.min"
-                                , label = "minimal cases/deaths to begin with"
+                                , label = ""
                                 , value = 10
                                 )
+                   , hr(style="border-color: black")
                    , checkboxInput(inputId="R0",
                                  label = "Sliding R0 computation", value = FALSE)
-                  , checkboxInput(inputId="map"
-                                 , label = "World Map"
+                   , hr(style="border-color: black")
+                   , strong("Select Socio-Economic Variable to Compare")
+                   , selectizeInput(inputId = "socialvar"
+                                 , label = "Select variable"
+                                 , choices = c("NONE",
+                                 names(map.df.2)[-c(1:3)]
+                                 )
+                                 , selected = c("NONE")
+                                 )
+                    , checkboxInput(inputId="map"
+                                 , label = "World Map (select one WorldBank data)"
                                  , value = FALSE)
+                  , checkboxInput(inputId="xyplot"
+                                 , label = "XY-plot (select one WorldBank data)"
+                                , value = FALSE)
                   , checkboxInput(inputId="corrmap",
-                                  label = "Cross-Correlations", value = FALSE)
-                  , strong("Select Socio-Economic Variable to Compare")
-                  , selectizeInput(inputId = "socialvar"
-                                , label = "Select variable"
-                                , choices = c("NONE",
-                                names(map.df.2)[-c(1:3)]
-                                )
-                                , selected = c("NONE")
-                                )
+                                  label = "Cross-Correlations (all WorldBank data)", value = FALSE)
                   ),
       mainPanel(width = 9,
                 fluidRow(
@@ -153,7 +165,7 @@ server <- function(input, output, session) {
   output$distPlot <- renderPlot({
 ###############################
 
-      if(input$map){
+      if(input$map | input$xyplot){
         sPDF <- joinCountryData2Map(map.df.2
         , joinCode = "ISO2"
         , nameJoinColumn = "iso2c")
@@ -372,6 +384,35 @@ if(input$map){
     } else {stop(safeError(("Incompatible Data to show / plot option combination")))}
 }
 
+if(input$xyplot){
+  if(input$data_column == "total_cases" | input$data_column == "total_deaths"){
+    #var="total_cases"; socialvar = "Population in the largest city (% of urban population)" ;
+    xy.df <- map.df.2[, names(map.df.2) %in% c(var, social.var, "location", "continent")]
+    names(xy.df) <- c("continent", "location", "y", "x")
+    xy.df$fcontinent <- as.factor(xy.df$continent)
+      myplot <- ggplot(xy.df, aes(x = x, y = y, colour = continent))+
+                geom_point()+
+                geom_label_repel(aes(label = location)
+                  #, box.padding   = 0.35
+                  , point.padding = 0.5
+                  , segment.color = 'grey50'
+                  , size = 2)+
+                  labs(x = social.var, y = var)+
+                  theme_minimal()
+    } else {stop(safeError(("Incompatible Data to show / plot option combination")))}
+}
+if(input$corrmap){
+  labs = names(map.df.2[, -c(1:3)])
+  myplot <- corrgram(map.df.2[, -c(1:3)]
+          #          , lower.panel = panel.shade
+                    , lower.panel = NULL
+                    , upper.panel = panel.pie
+          #          , diag.panel = panel.minmax
+                    , text.panel = panel.txt
+                    , outer.labels = list(bottom=list(labels=labs,cex = 0.5, srt = 15),
+                                left=list(labels=labs,cex = 0.5, srt = -75))
+                    )
+}
 
     if(input$log)
       myplot <- myplot + scale_y_log10()
