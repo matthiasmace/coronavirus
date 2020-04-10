@@ -5,7 +5,8 @@ library(ggplot2)
 library(shinythemes)
 library(wbstats)
 library(countrycode)
-library(R0)
+#library(R0)
+library(EpiEstim)
 library(rworldmap)
 library(countrycode)
 library(tidyr)
@@ -100,7 +101,7 @@ ui <- fluidPage(#theme = shinytheme("flatly"),
                                     'Asia' = unique(covdat[covdat$continent == 'Asia',]$location),
                                     'Oceania' = unique(covdat[covdat$continent == 'Oceania',]$location)
                                     )
-                               , selected = c("France", "Italy", "Germany", "Spain", "Poland", "South Korea")
+                               , selected = c("France", "Italy", "Germany", "Spain", "Poland", "South Korea", "United Kingdom", "United States")
                                , multiple = TRUE
                                )
                    , strong("Plot options:")
@@ -119,7 +120,13 @@ ui <- fluidPage(#theme = shinytheme("flatly"),
                                 )
                    , hr(style="border-color: black")
                    , checkboxInput(inputId="R0",
-                                 label = "Sliding R0 computation", value = FALSE)
+                                 label = "Sliding R0 computation (select 'new_cases' or 'new_deaths')"
+                                 #(choose the computing window in days)
+                                 , value = FALSE)
+                   , numericInput(inputId = "window.R0"
+                                 , label = ""
+                                 , value = 3
+                                 )
                    , hr(style="border-color: black")
                    , strong("Select Socio-Economic Variable to Compare")
                    , selectizeInput(inputId = "socialvar"
@@ -200,80 +207,57 @@ server <- function(input, output, session) {
             }
 
     if(input$R0){
-    DAT.0 = covdat[covdat$location %in% input$countries_sel, c("date", "location", "new_deaths")]
-    mGT<-generation.time("gamma", c(3, 1.5))
-    RES <- list()
-    #
-    for(c in unique(DAT.0$location)){
-      DAT.1 <- DAT.0[DAT.0$location == c, ]
-      DAT.1 <- DAT.1[-c(1:(which(DAT.1$new_deaths > 0)[1]-1)), ]
-      DATES <- DAT.1$date
-      DAT.1 <- DAT.1$new_deaths
-      names(DAT.1) <- format(as.Date(as.character(DATES)), "%m/%d/%Y")
-      ##
-      L = length(DAT.0)
-      window = 3
-      #
-      steps <- data.frame(
-      #										"BEGIN" = c(n.steps*step - 4, n.steps[length(n.steps)]*step + 1 -1)
-      #										, "END" = c(n.steps*step, L - 1)
-                          J = 1:(length(DAT.1) - 1)
-                          , "BEGIN" = as.numeric(NA)
-                          , "END" = as.numeric(NA)
-                          , "R0_point" = as.numeric(NA)
-                          , "R0_low" = as.numeric(NA)
-                          , "R0_high" = as.numeric(NA)
-                          )
-      #
-    steps$BEGIN <- unlist(apply(steps, 1, function(x){
-            if((x["J"] - window/2) < 0){
-            return(0)
-            } else {
-            return(x["J"] - floor(window/2))
-            }
-            }
-            )
-            )
-    #
-    steps$END <- 		unlist(apply(steps, 1, function(x){
-            if((x["J"] - window/2) < 0){
-            return(window)
-            } else {
-            return(floor(x["J"] + window/2))
-            }
-            }
-            )
-            )
-    #
-          RES[[c]] <- steps
-          for (s in (1:(dim(steps)[1]))){
-              print(s)
-              if(mean(DAT.1[(RES[[c]][s, "BEGIN"]):(RES[[c]][s, "END"])]) <= 10){
-              RES[[c]][s, "R0_point"] <- 0
-              RES[[c]][s, "R0_low"] <- 0
-              RES[[c]][s, "R0_high"] <- 0
-              } else {
-              estR0 <- estimate.R(DAT.1, mGT
-                    , begin = steps[s, "BEGIN"], end = steps[s, "END"]
-                    , methods=c(
-                    "EG"
-                    #"ML"
-                    #"TD"
-                     #"AR", "SB"
-                    )
-                    , pop.size=100000, nsim=10000)
-                    print(estR0)
-                    RES[[c]][s, "R0_point"] <- estR0$estimates$EG$R
-                    RES[[c]][s, "R0_low"] <- estR0$estimates$EG$conf.int[1]
-                    RES[[c]][s, "R0_high"] <- estR0$estimates$EG$conf.int[2]
-                    }
-                  }
+      #  COLS <- c(which(names(covdat) %in% c("date", "location", input$data_column)))
+      #  DAT.0 = covdat[covdat$location %in% input$countries_sel, COLS]
+        #DAT.0 = covdat[covdat$location %in% input$countries_sel, c("date", "location", "new_deaths")]
+        if(input$data_column == "new_cases"){
+            DAT.0 = covdat[covdat$location %in% input$countries_sel, c(2, 3, 4)]
+        } else if(input$data_column == "new_deaths") {
+            DAT.0 = covdat[covdat$location %in% input$countries_sel, c(2, 3, 5)]
+        } else {stop(safeError(("Incompatible Data to show / plot option combination")))}
+        #
+        names(DAT.0) <- c("date", "location", "data")
+        RES <- list()
+        #
+        config <- make_config(list(mean_si = 2.6, std_mean_si = 1,
+                                   min_mean_si = 1, max_mean_si = 4.2,
+                                   std_si = 1.5, std_std_si = 0.5,
+                                   min_std_si = 0.5, max_std_si = 2.5))
+        #
+        #window = input$window.R0
+        #
+        for(c in unique(DAT.0$location)){
+          DAT.1 <- DAT.0[DAT.0$location == c  & (DAT.0$data >= input$num.min), ]
+          rownames(DAT.1) <- DAT.1$date
+          DAT.1 <- DAT.1[, -c(1, 2)]
+          es_uncertain_si <- estimate_R(DAT.1,
+                                         method = "uncertain_si",
+                                         config = config)
+          #
+          max.length <- max(table(DAT.0[DAT.0$data > input$num.min, c("location")]))
+          df <- rbind(do.call("rbind"
+                                          , replicate(n = (max.length - dim(DAT.1)[1])
+                                                      , rep(c(NA), times = dim(es_uncertain_si$R)[2])
+                                          , simplify = FALSE)
+                                          )
+                                    , as.matrix(es_uncertain_si$R)
+                                    )
 
-    }
+          RES[[c]] <- data.frame("J" <- seq(dim(df)[1])
+          										, "BEGIN" = df[, "t_start"]
+          										, "END" = df[, "t_end"]
+                              , "R0_point" = df[, "Median(R)"]
+                              , "R0_low" = df[, "Quantile.0.05(R)"]
+                              , "R0_high" = df[, "Quantile.0.95(R)"]
+                              )
+                  #rownames(RES[[c]]) <- sort(unique(DAT.0$date))
+                            }
+
     for(c in names(RES)){
       RES[[c]]$location <- c
     }
     RES <- do.call("rbind", RES)
+    names(RES)[1] <- "J"
   }
 ###############################
 
@@ -328,9 +312,12 @@ server <- function(input, output, session) {
     }
     } else if(input$R0){
         myplot <- ggplot(data = RES, aes(x = J, y = R0_point, colour = location)) +
-        geom_point() +
-        geom_line()+
-        geom_ribbon(aes(ymin=R0_low, ymax=R0_high, colour = location), linetype=2, alpha=0.5)+
+        geom_line(size = 3)+
+        geom_ribbon(aes(ymin=R0_low, ymax=R0_high, colour = location), linetype=2, alpha=0.2)+
+        xlim(0, NA)+
+        geom_hline(
+              yintercept = 1,
+              )+
         theme_minimal()
       } else {
     if(input$percapita){
