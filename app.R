@@ -120,7 +120,7 @@ ui <- fluidPage(#theme = shinytheme("flatly"),
                                 )
                    , hr(style="border-color: black")
                    , checkboxInput(inputId="R0",
-                                 label = "Sliding R0 computation (select 'new_cases' or 'new_deaths')"
+                                 label = "Sliding R0 computation (select 'new_cases' or 'new_deaths') \n (remove South Korea & China before)"
                                  #(choose the computing window in days)
                                  , value = FALSE)
                    , numericInput(inputId = "window.R0"
