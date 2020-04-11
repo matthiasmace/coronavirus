@@ -1,4 +1,5 @@
 library(shiny)
+#library(shinyjs)
 library(curl)
 library(data.table)
 library(ggplot2)
@@ -57,11 +58,16 @@ maxdate <- max(covdat$date)
 
 
 # Define UI for app that draws a histogram ----
-ui <- fluidPage(#theme = shinytheme("flatly"),
-  fluidRow(
+ui <- fluidPage(
+          #theme = shinytheme("flatly")
+      #    , tags$style("#myNumericInput {font-size:50px;height:50px;}"),
+          , tags$style("[type = 'number'] {font-size:50px;height:50px;}")
+    useShinyjs()  # Set up shinyjs
+  , fluidRow(
     column(12,
-      h1("SARS-CoV-2 pandemics data display & analysis Webpage for the people", align="center"),
-      p("Data from",
+      h1("CovId-19 for People", align="center")
+      , h2("SARS-CoV-2 pandemics data display & analysis Webpage for the people", align="center")
+      , p("Data from",
               a("Our World in Data",
                 href="https://ourworldindata.org/coronavirus"),
               "| Link to the dataset (last updated ",
@@ -78,10 +84,10 @@ ui <- fluidPage(#theme = shinytheme("flatly"),
               , a("| Matthias FB",
                 href="https://www.facebook.com/matthias.mace.5"),
               align = "center"
-        )
-    )
-  ),
-  fluidRow(
+         )
+       )
+     )
+  , fluidRow(
     sidebarLayout(
       sidebarPanel(width = 3
                    , radioButtons(inputId = "data_column"
@@ -123,6 +129,18 @@ ui <- fluidPage(#theme = shinytheme("flatly"),
                                  label = "Sliding R0 computation (select 'new_cases' or 'new_deaths') \n (remove South Korea & China before)"
                                  #(choose the computing window in days)
                                  , value = FALSE)
+                   , column(5
+                        , numericInput(inputId = "SI.min"
+                                 , label = "Serial Interval Min"
+                                 , value = 4
+                                 )
+                            )
+                   , column(5
+                        , numericInput(inputId = "SI.max"
+                                 , label = "Serial Interval Max"
+                                 , value = 8
+                                 )
+                            )
                    , numericInput(inputId = "window.R0"
                                  , label = ""
                                  , value = 3
@@ -165,6 +183,12 @@ ui <- fluidPage(#theme = shinytheme("flatly"),
 
 # Define server logic required to draw a histogram ----
 server <- function(input, output, session) {
+          #  onevent("mouseover", "R0", alert("aide R0"))
+          #  onevent("mouseleave", "R0", alert("aide R0"))
+
+
+
+
 
   # 1. It is "reactive" and therefore should be automatically
   #    re-executed when inputs (input$countries) change
@@ -219,8 +243,8 @@ server <- function(input, output, session) {
         names(DAT.0) <- c("date", "location", "data")
         RES <- list()
         #
-        config <- make_config(list(mean_si = 2.6, std_mean_si = 1,
-                                   min_mean_si = 1, max_mean_si = 4.2,
+        config <- make_config(list(mean_si = (mean(c(input$SI.min, input$SI.max))), std_mean_si = 1,
+                                   min_mean_si = input$SI.min, max_mean_si = input$SI.max,
                                    std_si = 1.5, std_std_si = 0.5,
                                    min_std_si = 0.5, max_std_si = 2.5))
         #
@@ -258,6 +282,7 @@ server <- function(input, output, session) {
     }
     RES <- do.call("rbind", RES)
     names(RES)[1] <- "J"
+    RES$J <- RES$J - length(unique(RES$J))  ##  reverse timescale
   }
 ###############################
 
@@ -318,6 +343,8 @@ server <- function(input, output, session) {
         geom_hline(
               yintercept = 1,
               )+
+        labs(x = "Time in days", y = "Basic Reproduction Number (R) estimates")+
+        xlim(-length(unique(RES$J)), 0)+
         theme_minimal()
       } else {
     if(input$percapita){
