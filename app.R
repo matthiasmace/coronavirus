@@ -59,11 +59,11 @@ maxdate <- max(covdat$date)
 
 # Define UI for app that draws a histogram ----
 ui <- fluidPage(
+      #     useShinyjs()  # Set up shinyjs
           #theme = shinytheme("flatly")
+      #    tags$style("[type = 'number'] {font-size:50px;height:50px;}")
       #    , tags$style("#myNumericInput {font-size:50px;height:50px;}"),
-          , tags$style("[type = 'number'] {font-size:50px;height:50px;}")
-    useShinyjs()  # Set up shinyjs
-  , fluidRow(
+   fluidRow(
     column(12,
       h1("CovId-19 for People", align="center")
       , h2("SARS-CoV-2 pandemics data display & analysis Webpage for the people", align="center")
