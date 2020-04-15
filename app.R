@@ -56,25 +56,57 @@ modifdate <- max(covdat$date)
 mindate <- min(covdat$date)
 maxdate <- max(covdat$date)
 
+################    FRANCE Data
+##### departements
+france.df <- as.data.frame(read.csv("https://www.data.gouv.fr/fr/datasets/r/63352e38-d353-4b54-bfd1-f1b3ee1cabd7", header = T, sep =";"))
+#france.df <- as.data.frame(read.csv("63352e38-d353-4b54-bfd1-f1b3ee1cabd7", header = T, sep =";"))
+france.df$jour <- as.Date(france.df$jour)
+#france.df$dep <- as.character(as.numeric(france.df$dep))
+france.regions <- as.matrix(read.csv("https://www.data.gouv.fr/en/datasets/r/1c31f420-829e-489e-a19d-36cf3ef57e4a", stringsAsFactors = FALSE))
+france.regions <- as.data.frame(rbind(france.regions, c("75", "Paris", "11", "\303\216le-de-France")))
+#Encoding(france.regions$nom_region) <- "Latin-ASCII"
+#france.regions$nom_region <- iconv(france.regions$nom_region,from="Latin",to="ASCII//TRANSLIT")
+france.df <- inner_join(france.df, france.regions, by = c("dep"= "code_departement"))
+france.df$nom_region <- gsub("La R\303\251union", "La Reunion", france.df$nom_region)
+france.df$nom_region <- gsub("Auvergne-Rh\303\264ne-Alpes", "Auvergne-Rhone-Alpes", france.df$nom_region)
+france.df$nom_region <- gsub("Provence-Alpes-C\303\264te d'Azur", "Provence-Alpes-Cote d'Azur", france.df$nom_region)
+france.df$nom_region <- gsub("Bourgogne-Franche-Comt\303\251", "Bourgogne-Franche-Comte", france.df$nom_region)
+france.df$nom_region <- gsub("\303\216le-de-France", "Ile-de-France", france.df$nom_region)
+
+#
+pop.dep <- as.data.frame(read.csv("./data_france/ensemble/Departements.csv", header = T, sep =";"))
+france.df <- inner_join(france.df, pop.dep, by = c("dep"= "CODDEP"))[, c("dep","sexe","jour","hosp","rea","rad","dc","nom_departement","code_region","nom_region","PTOT")]
+#
+##### regions
+regions.df <- aggregate(list(france.df$hosp, france.df$rea, france.df$rad, france.df$dc, france.df$PTOT), by=list(Sexe = france.df$sexe, Region = france.df$nom_region, Day = france.df$jour), FUN=sum)
+names(regions.df) <- c("Sexe", "Region", "jour", "hosp", "rea", "rad", "dc", "PTOT")
+
+#pop.reg <- as.data.frame(read.csv("./data_france/ensemble/Regions.csv", header = T, sep =";"))
+
 
 # Define UI for app that draws a histogram ----
-ui <- fluidPage(
+#ui <-
+#  ,fluidPage(title = "World Data"
+
+ui <- fluidPage(title = "World Data"
+, navbarPage("Pandemics for the People"
+      , tabPanel("World Data"
       #     useShinyjs()  # Set up shinyjs
           #theme = shinytheme("flatly")
       #    tags$style("[type = 'number'] {font-size:50px;height:50px;}")
       #    , tags$style("#myNumericInput {font-size:50px;height:50px;}"),
-   fluidRow(
+   , fluidRow(
     column(12,
-      h1("CovId-19 for People", align="center")
+      h1("Covid-19 for People", align="center")
       , h2("SARS-CoV-2 pandemics data display & analysis Webpage for the people", align="center")
       , p("Data from",
               a("Our World in Data",
-                href="https://ourworldindata.org/coronavirus"),
-              "| Link to the dataset (last updated ",
-              modifdate,
-              "):",
-              a("https://covid.ourworldindata.org/data/ecdc/full_data.csv",
-                href = "https://covid.ourworldindata.org/data/ecdc/full_data.csv")
+                href="https://ourworldindata.org/coronavirus")
+                  , "| Link to the dataset (last updated "
+                  , modifdate
+                  , "):"
+                  , a("https://covid.ourworldindata.org/data/ecdc/full_data.csv"
+                  ,  href = "https://covid.ourworldindata.org/data/ecdc/full_data.csv")
           , "&"
               , a("WorldBank"
                 , href="https://data.worldbank.org")
@@ -101,11 +133,11 @@ ui <- fluidPage(
                                 )
                    , selectInput(inputId = "countries_sel"
                                , label = "Countries (with at least 1 case):"
-                               , list('Europe' = unique(covdat[covdat$continent == 'Europe',]$location),
-                                    'Africa' = unique(covdat[covdat$continent == 'Africa',]$location),
-                                    'Americas' = unique(covdat[covdat$continent == 'Americas',]$location),
-                                    'Asia' = unique(covdat[covdat$continent == 'Asia',]$location),
-                                    'Oceania' = unique(covdat[covdat$continent == 'Oceania',]$location)
+                               , list('Europe' = unique(covdat[covdat$continent == 'Europe',]$location)
+                                      , 'Africa' = unique(covdat[covdat$continent == 'Africa',]$location)
+                                      , 'Americas' = unique(covdat[covdat$continent == 'Americas',]$location)
+                                      , 'Asia' = unique(covdat[covdat$continent == 'Asia',]$location)
+                                      , 'Oceania' = unique(covdat[covdat$continent == 'Oceania',]$location)
                                     )
                                , selected = c("France", "Italy", "Germany", "Spain", "Poland", "South Korea", "United Kingdom", "United States")
                                , multiple = TRUE
@@ -165,7 +197,7 @@ ui <- fluidPage(
                   ),
       mainPanel(width = 9,
                 fluidRow(
-                  plotOutput(outputId = "distPlot", width="100%", height=750)
+                  plotOutput(outputId = "worldplot", width="100%", height=750)
                 ),
                 fluidRow(
                   sliderInput(inputId="dates",
@@ -175,26 +207,210 @@ ui <- fluidPage(
                                value = c(as.Date("2020-02-15", format = "%Y-%m-%d"),maxdate),
                                timeFormat = "%F",
                                width="100%")
-                )
-      )
-    )
+                               )
+                          )
+                  )
+            )
+#,fluidPage(title = "Component 2")
   )
-)
+      , tabPanel("Donnees Francaises"
+        , fluidRow(
+        column(12,
+          h1("Covid-19 pour le peuple", align="center")
+          , h2("Page de Visualisation et d'Analyse de données de la pandémie due au SARS-CoV-2", align="center")
+          , p("Données Source",
+                  a("Santé Publique France / data.gouv.fr",
+                    href="https://www.data.gouv.fr/fr/organizations/sante-publique-france/")
+            #      , "| Link to the dataset (last updated "
+            #      , modifdate
+            #      , "):"
+            #      , a("https://covid.ourworldindata.org/data/ecdc/full_data.csv"
+            #      ,  href = "https://covid.ourworldindata.org/data/ecdc/full_data.csv")
+            #  , "&"
+            #      , a("WorldBank"
+            #        , href="https://data.worldbank.org")
+              , "| Shiny app by Tomasz Suchan & Matthias Mace"
+                  , a("@tomaszsuchan",
+                    href="https://twitter.com/tomaszsuchan")
+                  , a("| Matthias FB",
+                    href="https://www.facebook.com/matthias.mace.5"),
+                  align = "center"
+             )
+           )
+         )
+         , fluidRow(
+         sidebarLayout(
+           sidebarPanel(width = 3
+                        , radioButtons(inputId = "echelle"
+                                    , label = "Echelle d'analyse:"
+                                    , choices = c("Region" = "region"
+                                    , "Departement" = "departement"
+                                    )
+                                    , selected = "departement"
+                                    )
+                        , radioButtons(inputId = "data_column_fr"
+                                     , label = "Data to show:"
+                                     , choices = c("Hospitalises" = "hosp"
+                                     , "Réenimation" = "rea"
+                                     , "Sorties" = "rad"
+                                     , "Decedes" = "dc"
+                                     , "Grouper les 4 categories (histogramme)" = "all"
+                                     )
+                                     , selected = "hosp"
+                                     )
+                        , radioButtons(inputId = "sexe"
+                                     , label = "Sexe"
+                                     , choices = c("Tous" = 0
+                                              , "Femmes" = 2
+                                              , "Hommes" = 1
+                                              )
+                                    , selected = 0
+                                    )
+                        ,     conditionalPanel(
+                              condition = "input.echelle == 'departement'"
+                              , selectInput(inputId = "dep_sel"
+                                    , label = "Départements (with at least 1 case):"
+                                        , list(
+                                            'Auvergne-Rhône-Alpes'	= unique(france.df[france.df$nom_region == 'Auvergne-Rhone-Alpes',]$dep)
+                                            , 'Bourgogne-Franche-Comté'	= unique(france.df[france.df$nom_region == 'Bourgogne-Franche-Comté',]$dep)
+                                            , 'Bretagne'	= unique(france.df[france.df$nom_region == 'Bretagne',]$dep)
+                                            , 'Centre-Val de Loire'	= unique(france.df[france.df$nom_region == 'Centre-Val de Loire',]$dep)
+                                            , 'Corse'	= unique(france.df[france.df$nom_region == 'Corse',]$dep)
+                                            , 'Grand Est'	= unique(france.df[france.df$nom_region == 'Grand Est',]$dep)
+                                            , 'Guadeloupe'	= unique(france.df[france.df$nom_region == 'Guadeloupe',]$dep)
+                                            , 'Guyane'	= unique(france.df[france.df$nom_region == 'Guyane',]$dep)
+                                            , 'Hauts-de-France'	= unique(france.df[france.df$nom_region == 'Hauts-de-France',]$dep)
+                                            , 'Île-de-France'	= unique(france.df[france.df$nom_region == 'Ile-de-France',]$dep)
+                                            , 'La Réunion'	= unique(france.df[france.df$nom_region == 'La Reunion',]$dep)
+                                            , 'Martinique'	= unique(france.df[france.df$nom_region == 'Martinique',]$dep)
+                                            , 'Normandie'	= unique(france.df[france.df$nom_region == 'Normandie',]$dep)
+                                            , 'Nouvelle-Aquitaine'	= unique(france.df[france.df$nom_region == 'Nouvelle-Aquitaine',]$dep)
+                                            , 'Occitanie'	= unique(france.df[france.df$nom_region == 'Occitanie',]$dep)
+                                            , 'Pays de la Loire'	= unique(france.df[france.df$nom_region == 'Pays de la Loire',]$dep)
+                                            , "Provence-Alpes-Côte d'Azur"	= unique(france.df[france.df$nom_region == "Provence-Alpes-Cote d'Azur",]$dep)
+                                            )
+                                    , selected = c(66, 31, 47, 11, 75, 67, 68
+                                        )
+                                    , multiple = TRUE
+                                    )
+                                    )
+                                    ,     conditionalPanel(
+                                          condition = "input.echelle == 'region'"
+                                          , selectInput(inputId = "region_sel"
+                                                , label = "Regions (with at least 1 case):"
+                                                    , list(
+                                                    "Auvergne-Rhone-Alpes"
+                                                    ,"Bourgogne-Franche-Comte"
+                                                    ,"Bretagne"
+                                                    ,"Centre-Val de Loire"
+                                                    ,"Corse"
+                                                    ,"Grand Est"
+                                                    ,"Guadeloupe"
+                                                    ,"Guyane"
+                                                    ,"Hauts-de-France"
+                                                    ,"Ile-de-France"
+                                                    ,"La Reunion"
+                                                    ,"Martinique"
+                                                    ,"Normandie"
+                                                    ,"Nouvelle-Aquitaine"
+                                                    ,"Occitanie"
+                                                    ,"Pays de la Loire"
+                                                    ,"Provence-Alpes-Cote d'Azur"
+                                                        )
+                                                , selected = c("Grand Est", "Ile-de-France", "Nouvelle-Aquitaine", "Occitanie"
+                                                    )
+                                                , multiple = TRUE
+                                                )
+                                                )
+                        , strong("Plot options:")
+                        , em("For curves (multiple selections allowed)")
+                                    , checkboxInput(inputId="log_fr"
+                                      , label = "Plot y axis on log scale", value = FALSE)
+                                    , checkboxInput(inputId="percapita_fr",
+                                      label = "Correct for population size", value = FALSE)
+                       , checkboxInput(inputId="dailyscale_fr",
+                                      label = "Plot daily breaks on x axis", value = FALSE)
+                       , checkboxInput(inputId="sync_fr",
+                                      label = "Synchroniser les épidémies départementales/régionales (nombre minimal de cas/morts pour définir le début)", value = FALSE)
+                       , numericInput(inputId = "num.min.fr"
+                                     , label = ""
+                                     , value = 10
+                                     )
+                        , hr(style="border-color: black")
+                        , checkboxInput(inputId="R0",
+                                      label = "Sliding R0 computation (select 'new_cases' or 'new_deaths') \n (remove South Korea & China before)"
+                                      #(choose the computing window in days)
+                                      , value = FALSE)
+                        , column(5
+                             , numericInput(inputId = "SI.min"
+                                      , label = "Serial Interval Min"
+                                      , value = 4
+                                      )
+                                 )
+                        , column(5
+                             , numericInput(inputId = "SI.max"
+                                      , label = "Serial Interval Max"
+                                      , value = 8
+                                      )
+                                 )
+                        , numericInput(inputId = "window.R0"
+                                      , label = ""
+                                      , value = 3
+                                      )
+                        , hr(style="border-color: black")
+                        , strong("Select Socio-Economic Variable to Compare")
+                        , selectizeInput(inputId = "socialvar"
+                                      , label = "Select variable"
+                                      , choices = c("NONE",
+                                      names(map.df.2)[-c(1:3)]
+                                      )
+                                      , selected = c("NONE")
+                                      )
+                         , checkboxInput(inputId="map"
+                                      , label = "World Map (select one WorldBank data)"
+                                      , value = FALSE)
+                       , checkboxInput(inputId="xyplot"
+                                      , label = "XY-plot (select one WorldBank data)"
+                                     , value = FALSE)
+                       , checkboxInput(inputId="corrmap",
+                                       label = "Cross-Correlations (all WorldBank data)", value = FALSE)
+                       ),
+           mainPanel(width = 9,
+                     fluidRow(
+                       plotOutput(outputId = "franceplot", width="100%", height=750)
+                     ),
+                     fluidRow(
+                       sliderInput(inputId="dates",
+                                    label="Dates:",
+                                    min = mindate,
+                                    max = maxdate,
+                                    value = c(as.Date("2020-02-15", format = "%Y-%m-%d"),maxdate),
+                                    timeFormat = "%F",
+                                    width="100%")
+                                    )
+                               )
+                       )
+                 )
+
+
+
+                               )
+                        )
+                  )
+
+
 
 # Define server logic required to draw a histogram ----
 server <- function(input, output, session) {
           #  onevent("mouseover", "R0", alert("aide R0"))
           #  onevent("mouseleave", "R0", alert("aide R0"))
 
-
-
-
+############################### world
 
   # 1. It is "reactive" and therefore should be automatically
   #    re-executed when inputs (input$countries) change
   # 2. Its output type is a plot
-  output$distPlot <- renderPlot({
-###############################
+  output$worldplot <- renderPlot({
 
       if(input$map | input$xyplot){
         sPDF <- joinCountryData2Map(map.df.2
@@ -434,6 +650,119 @@ if(input$corrmap){
       myplot <- myplot + scale_x_date(date_minor_breaks = "1 day")
     return(myplot)
   })
+
+############################### France
+
+output$franceplot <- renderPlot({
+
+      if(input$echelle == "departement"){
+  #      dates_range <- seq(input$dates[1], input$dates[2], by = "days")
+        data_selected <- france.df[(france.df$dep %in% input$dep_sel) & (france.df$sexe == input$sexe),]
+        data_selected$location <- data_selected$dep
+      } else {
+        data_selected <- regions.df[(regions.df$Region %in% input$region_sel) & (regions.df$Sexe == input$sexe),]
+        data_selected$location <- data_selected$Region
+      }
+
+
+
+
+      if(input$map | input$xyplot){}
+
+
+
+
+      if(input$sync_fr){
+
+          before <- which(data_selected$hosp < input$num.min.fr)
+          data_selected.sync <- data_selected[-before, ]
+          data_selected.sync$J <- 0
+          for (c in unique(data_selected.sync$location)){
+              L <- dim(data_selected.sync[data_selected.sync$location == c, ])[1]
+              data_selected.sync[data_selected.sync$location == c, "J"] <- seq(length = L)
+              }
+      #        dates_range <- seq(input$dates[1], input$dates[2], by = "days")
+      #        data_selected <- data_selected.sync[(data_selected.sync$location %in% input$countries_sel) & (data_selected.sync$date %in% dates_range),]
+            data_selected.sync$jour <- data_selected.sync$J
+            data_selected <- data_selected.sync
+            } #else {
+      #      if(input$echelle == "departement"){
+      #          dates_range <- seq(input$dates[1], input$dates[2], by = "days")
+      #          data_selected <- france.df[(france.df$dep %in% input$dep_sel) & (france.df$sexe == input$sexe),]
+      #          data_selected$location <- data_selected$dep
+      #        } else {
+      #        }
+      #      }
+
+
+      ######
+      myplot <- ggplot(data_selected) +
+            #scale_color_brewer(palette="Paired", name = "Country")
+            scale_color_discrete(name = paste(input$echelle, ":")) +
+            theme_linedraw(base_size = 15)
+      ######
+      #    dates_range <- seq(input$dates[1], input$dates[2], by = "days")
+      #    covdat_selected <- covdat[(covdat$location %in% input$countries_sel) & (covdat$date %in% dates_range),]
+
+
+      if(input$data_column_fr =="all"){
+        data <- melt(data = data_selected, id.vars = c("location", "jour"), measure.vars = c("hosp", "rea", "rad", "dc"))
+        myplot <- ggplot(data, aes(fill = variable, y = value, x = jour))+
+                  geom_bar(position = "stack", stat = "identity")
+      } else {
+  #    if(input$sync){
+  #    if(input$percapita){
+  #    }  else {
+  #    }
+  #    } else if(input$R0){
+  #      } else {
+      if(input$percapita_fr){
+        #myplot <- myplot + labs(x = "Date", y = "Number of cases")
+        if(input$data_column_fr == "hosp"){
+          myplot <- myplot+ geom_line(mapping = aes(x = jour, y = (hosp*10e5/PTOT), colour = location), size=1)+
+                            labs(x = "Date", y = "Patiens hospitalises / 100.000 habitants")
+                            }
+        else if(input$data_column_fr == "rea"){
+          myplot <- myplot + geom_line(mapping = aes(x = jour, y = rea*10e5/PTOT, colour = location), size=1)+
+                            labs(x = "Date", y = "Patiens en reanimation / 100.000 habitants")
+                            }
+        else if(input$data_column_fr == "rad"){
+          myplot <- myplot + geom_line(mapping = aes(x = jour, y = rad*10e5/PTOT, colour = location), size=1)+
+                            labs(x = "Date", y = "Patiens sortis / 100.000 habitants")
+                            }
+        else if(input$data_column_fr == "dc"){
+          myplot <- myplot + geom_line(mapping = aes(x = jour, y = dc*10e5/PTOT, colour = location), size=1)+
+                            labs(x = "Date", y = "Patiens decedes / 100.000 habitants")
+                            }
+          } else {
+            #myplot <- myplot + labs(x = "Date", y = "Number of cases")
+            if(input$data_column_fr == "hosp"){
+              myplot <- myplot+ geom_line(mapping = aes(x = jour, y = hosp, colour = location), size=1)+
+                                labs(x = "Date", y = "Patiens hospitalises")
+                        }
+            else if(input$data_column_fr == "rea"){
+              myplot <- myplot + geom_line(mapping = aes(x = jour, y = rea, colour = location), size=1)+
+                                 labs(x = "Date", y = "Patiens en reanimation")
+                         }
+            else if(input$data_column_fr == "rad"){
+              myplot <- myplot + geom_line(mapping = aes(x = jour, y = rad, colour = location), size=1)+
+                                 labs(x = "Date", y = "Patiens sortis")
+                         }
+            else if(input$data_column_fr == "dc"){
+              myplot <- myplot + geom_line(mapping = aes(x = jour, y = dc, colour = location), size=1)+
+                                 labs(x = "Date", y = "Patiens decedes")
+                         }
+          }
+        }
+
+    if(input$log_fr)
+      myplot <- myplot + scale_y_log10()
+    if(input$dailyscale_fr)
+      myplot <- myplot + scale_x_date(date_minor_breaks = "1 day")
+    return(myplot)
+}
+)
+
 }
 
 shinyApp(ui, server)
