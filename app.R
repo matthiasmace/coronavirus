@@ -18,12 +18,13 @@ library(RColorBrewer)
 library(corrgram)
 library(ggrepel)
 #
-library(oceanis)
-library(leaflet)
-library(sf)
-library(classInt)
-library(leaflet.extras)
-library(stringr)
+#library(oceanis)
+#library(leaflet)
+#library(sf)
+#library(classInt)
+#library(leaflet.extras)
+#library(stringr)
+#
 library(shinyBS)
 
 
@@ -70,30 +71,31 @@ maxdate <- max(covdat$date)
 
 ################    FRANCE Data
 ##### departements
+##  Hospit data
 france.df <- as.data.frame(read.csv("https://www.data.gouv.fr/fr/datasets/r/63352e38-d353-4b54-bfd1-f1b3ee1cabd7", header = T, sep =";"))
 #france.df <- as.data.frame(read.csv("63352e38-d353-4b54-bfd1-f1b3ee1cabd7", header = T, sep =";"))
 france.df$jour <- as.Date(france.df$jour)
 #france.df$dep <- as.character(as.numeric(france.df$dep))
-france.regions <- as.matrix(read.csv("https://www.data.gouv.fr/en/datasets/r/1c31f420-829e-489e-a19d-36cf3ef57e4a", stringsAsFactors = FALSE))
-france.regions <- as.data.frame(rbind(france.regions, c("75", "Paris", "11", "\303\216le-de-France")))
-#Encoding(france.regions$nom_region) <- "Latin-ASCII"
-#france.regions$nom_region <- iconv(france.regions$nom_region,from="Latin",to="ASCII//TRANSLIT")
-france.df <- inner_join(france.df, france.regions, by = c("dep"= "code_departement"))
-france.df$nom_region <- gsub("La R\303\251union", "La Reunion", france.df$nom_region)
-france.df$nom_region <- gsub("Auvergne-Rh\303\264ne-Alpes", "Auvergne-Rhone-Alpes", france.df$nom_region)
-france.df$nom_region <- gsub("Provence-Alpes-C\303\264te d'Azur", "Provence-Alpes-Cote d'Azur", france.df$nom_region)
-france.df$nom_region <- gsub("Bourgogne-Franche-Comt\303\251", "Bourgogne-Franche-Comte", france.df$nom_region)
-france.df$nom_region <- gsub("\303\216le-de-France", "Ile-de-France", france.df$nom_region)
+france.regions <- as.data.frame(read.csv("https://www.data.gouv.fr/en/datasets/r/987227fb-dcb2-429e-96af-8979f97c9c84", stringsAsFactors = FALSE))
+#france.regions <- as.data.frame(rbind(france.regions, c("75", "Paris", "11", "\303\216le-de-France")))
+#Encoding(france.regions$region_name) <- "Latin-ASCII"
+#france.regions$region_name <- iconv(france.regions$region_name,from="Latin",to="ASCII//TRANSLIT")
+france.df <- inner_join(france.df, france.regions, by = c("dep"= "num_dep"))
+france.df$region_name <- gsub("La R\303\251union", "La Reunion", france.df$region_name)
+france.df$region_name <- gsub("Auvergne-Rh\303\264ne-Alpes", "Auvergne-Rhone-Alpes", france.df$region_name)
+france.df$region_name <- gsub("Provence-Alpes-C\303\264te d'Azur", "Provence-Alpes-Cote d'Azur", france.df$region_name)
+france.df$region_name <- gsub("Bourgogne-Franche-Comt\303\251", "Bourgogne-Franche-Comte", france.df$region_name)
+france.df$region_name <- gsub("\303\216le-de-France", "Ile-de-France", france.df$region_name)
 
 #
 pop.dep <- as.data.frame(read.csv("./data_france/ensemble/Departements.csv", header = T, sep =";"))
-france.df <- inner_join(france.df, pop.dep, by = c("dep"= "CODDEP"))[, c("dep","nom_departement", "code_region", "nom_region","sexe","jour", "hosp","rea","rad","dc","PTOT")]
+france.df <- inner_join(france.df, pop.dep, by = c("dep"= "CODDEP"))[, c("dep","DEP", "region_name","sexe","jour", "hosp","rea","rad","dc","PTOT")]
 #
 lits.dep <- as.data.frame(read.csv("./data_france/Lits_2013_2018.csv", header = T, sep =";"))
 france.df <- inner_join(france.df, lits.dep, by = c("dep"= "dep"))
 #
 ##### regions
-regions.df <- aggregate(list(france.df[, -c(1:6)]), by=list(Sexe = france.df$sexe, Region = france.df$nom_region, jour = france.df$jour), FUN=sum)
+regions.df <- aggregate(list(france.df[, -c(1:6)]), by=list(Sexe = france.df$sexe, Region = france.df$region_name, jour = france.df$jour), FUN=sum)
 #pop.reg <- as.data.frame(read.csv("./data_france/ensemble/Regions.csv", header = T, sep =";"))
 
 ########################################################################################################
@@ -290,23 +292,23 @@ ui <- fluidPage(title = "World Data"
                               , selectInput(inputId = "dep_sel"
                                     , label = "Départements (with at least 1 case):"
                                         , list(
-                                            'Auvergne-Rhône-Alpes'	= unique(france.df[france.df$nom_region == 'Auvergne-Rhone-Alpes',]$dep)
-                                            , 'Bourgogne-Franche-Comté'	= unique(france.df[france.df$nom_region == 'Bourgogne-Franche-Comté',]$dep)
-                                            , 'Bretagne'	= unique(france.df[france.df$nom_region == 'Bretagne',]$dep)
-                                            , 'Centre-Val de Loire'	= unique(france.df[france.df$nom_region == 'Centre-Val de Loire',]$dep)
-                                            , 'Corse'	= unique(france.df[france.df$nom_region == 'Corse',]$dep)
-                                            , 'Grand Est'	= unique(france.df[france.df$nom_region == 'Grand Est',]$dep)
-                                            , 'Guadeloupe'	= unique(france.df[france.df$nom_region == 'Guadeloupe',]$dep)
-                                            , 'Guyane'	= unique(france.df[france.df$nom_region == 'Guyane',]$dep)
-                                            , 'Hauts-de-France'	= unique(france.df[france.df$nom_region == 'Hauts-de-France',]$dep)
-                                            , 'Île-de-France'	= unique(france.df[france.df$nom_region == 'Ile-de-France',]$dep)
-                                            , 'La Réunion'	= unique(france.df[france.df$nom_region == 'La Reunion',]$dep)
-                                            , 'Martinique'	= unique(france.df[france.df$nom_region == 'Martinique',]$dep)
-                                            , 'Normandie'	= unique(france.df[france.df$nom_region == 'Normandie',]$dep)
-                                            , 'Nouvelle-Aquitaine'	= unique(france.df[france.df$nom_region == 'Nouvelle-Aquitaine',]$dep)
-                                            , 'Occitanie'	= unique(france.df[france.df$nom_region == 'Occitanie',]$dep)
-                                            , 'Pays de la Loire'	= unique(france.df[france.df$nom_region == 'Pays de la Loire',]$dep)
-                                            , "Provence-Alpes-Côte d'Azur"	= unique(france.df[france.df$nom_region == "Provence-Alpes-Cote d'Azur",]$dep)
+                                            'Auvergne-Rhône-Alpes'	= unique(france.df[france.df$region_name == 'Auvergne-Rhone-Alpes',]$dep)
+                                            , 'Bourgogne-Franche-Comté'	= unique(france.df[france.df$region_name == 'Bourgogne-Franche-Comté',]$dep)
+                                            , 'Bretagne'	= unique(france.df[france.df$region_name == 'Bretagne',]$dep)
+                                            , 'Centre-Val de Loire'	= unique(france.df[france.df$region_name == 'Centre-Val de Loire',]$dep)
+                                            , 'Corse'	= unique(france.df[france.df$region_name == 'Corse',]$dep)
+                                            , 'Grand Est'	= unique(france.df[france.df$region_name == 'Grand Est',]$dep)
+                                            , 'Guadeloupe'	= unique(france.df[france.df$region_name == 'Guadeloupe',]$dep)
+                                            , 'Guyane'	= unique(france.df[france.df$region_name == 'Guyane',]$dep)
+                                            , 'Hauts-de-France'	= unique(france.df[france.df$region_name == 'Hauts-de-France',]$dep)
+                                            , 'Île-de-France'	= unique(france.df[france.df$region_name == 'Ile-de-France',]$dep)
+                                            , 'La Réunion'	= unique(france.df[france.df$region_name == 'La Reunion',]$dep)
+                                            , 'Martinique'	= unique(france.df[france.df$region_name == 'Martinique',]$dep)
+                                            , 'Normandie'	= unique(france.df[france.df$region_name == 'Normandie',]$dep)
+                                            , 'Nouvelle-Aquitaine'	= unique(france.df[france.df$region_name == 'Nouvelle-Aquitaine',]$dep)
+                                            , 'Occitanie'	= unique(france.df[france.df$region_name == 'Occitanie',]$dep)
+                                            , 'Pays de la Loire'	= unique(france.df[france.df$region_name == 'Pays de la Loire',]$dep)
+                                            , "Provence-Alpes-Côte d'Azur"	= unique(france.df[france.df$region_name == "Provence-Alpes-Cote d'Azur",]$dep)
                                             )
                                     , selected = c(66, 31, 47, 11, 75, 67, 68
                                         )
@@ -1008,7 +1010,7 @@ output$franceplot <- renderPlot({
                                       , by = as.list(france.df[france.df$sexe == input$sexe, c(1, 4, 12:23)])
                                       , FUN = last
                                       )
-                      DF <- aggregate(DF[, -c(1:2)], by = list(Region = DF$nom_region), FUN = sum)
+                      DF <- aggregate(DF[, -c(1:2)], by = list(Region = DF$region_name), FUN = sum)
                       df_poly <- data.frame(x = c(-Inf, Inf, Inf)
                                           , y = c(-Inf, Inf, -Inf)
                                           )
