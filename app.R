@@ -69,6 +69,12 @@ modifdate <- max(covdat$date)
 mindate <- min(covdat$date)
 maxdate <- max(covdat$date)
 
+###   TESTS DATA
+tests.df <- as.data.frame(read.csv("https://raw.githubusercontent.com/owid/covid-19-data/master/public/data/testing/covid-testing-all-observations.csv"))
+tests.df$Date <- as.Date(tests.df$Date)
+TTT <- inner_join(covdat, tests.df, by = c("iso2c"= "ISO.code", "date" = "Date"))
+
+
 ################    FRANCE Data
 ##### departements
 ##  Hospit data
@@ -101,10 +107,10 @@ regions.df <- aggregate(list(france.df[, -c(1:6)]), by=list(Sexe = france.df$sex
 ########################################################################################################
 # Define UI for app that draws a histogram ----
 #ui <-
-#  ,fluidPage(title = "World Data"
+#  ,fluidPage(title = "COVID-19 Pandemics for the P"
 
-ui <- fluidPage(title = "World Data"
-, navbarPage("Pandemics for the People"
+ui <- fluidPage(title = "COVID-19 Pandemics for the People"
+, navbarPage("COVID-19"
       , tabPanel("World Data"
       #     useShinyjs()  # Set up shinyjs
           #theme = shinytheme("flatly")
@@ -982,8 +988,8 @@ output$franceplot <- renderPlot({
 
                 if(input$xyplot_fr){
                     if(input$echelle == "departement"){
-                      DF <- aggregate(france.df[france.df$sexe == input$sexe, c(7:11)]
-                                      , by = as.list(france.df[france.df$sexe == input$sexe, c(1, 4, 12:23)])
+                      DF <- aggregate(france.df[france.df$sexe == input$sexe, c(5:9)]
+                                      , by = as.list(france.df[france.df$sexe == input$sexe, c(1, 3, 10, 11:22)])
                                       , FUN = last
                                       )
                       df_poly <- data.frame(x = c(-Inf, Inf, Inf)
@@ -1006,8 +1012,8 @@ output$franceplot <- renderPlot({
                                         geom_text_repel(aes(label = dep), size=3)+
                                         theme_minimal()
                     } else {
-                      DF <- aggregate(france.df[france.df$sexe == input$sexe, c(7:11)]
-                                      , by = as.list(france.df[france.df$sexe == input$sexe, c(1, 4, 12:23)])
+                      DF <- aggregate(france.df[france.df$sexe == input$sexe, c(5:9)]
+                                      , by = as.list(france.df[france.df$sexe == input$sexe, c(1, 3, 10, 11:22)])
                                       , FUN = last
                                       )
                       DF <- aggregate(DF[, -c(1:2)], by = list(Region = DF$region_name), FUN = sum)
