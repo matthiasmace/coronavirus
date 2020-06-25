@@ -39,7 +39,7 @@ covdat$iso2c <- countrycode(covdat$location, origin = 'country.name', destinatio
 #get continents
 covdat$continent <- countrycode(covdat$location, origin = 'country.name', destination ='continent')
 #get population_2018
-pop_data <- wb(country = unique(covdat$iso2c), indicator = "SP.POP.TOTL", startdate = 2018, enddate = 2018)
+pop_data <- wb(country = c(unique(covdat$iso2c)), indicator = "SP.POP.TOTL", startdate = 2018, enddate = 2018)
 covdat <- merge(covdat, pop_data[,c('iso2c', 'value')], by='iso2c')
 names(covdat)[names(covdat) == "value"] <- "population"
 
@@ -68,6 +68,13 @@ modifdate <- max(covdat$date)
 
 mindate <- min(covdat$date)
 maxdate <- max(covdat$date)
+
+# by continent
+continents.df <- aggregate(covdat[, c("new_cases", "new_deaths", "total_cases", "total_deaths", "total_cases_percapita", "total_deaths_percapita")], by=list(location = covdat$continent, date = covdat$date), FUN = sum)
+
+# whole world
+world.df <- aggregate(covdat[, c("new_cases", "new_deaths", "total_cases", "total_deaths", "total_cases_percapita", "total_deaths_percapita")], by=list(date = covdat$date), FUN = sum)
+world.df$location <- "World"
 
 ###   TESTS DATA
 tests.df <- as.data.frame(read.csv("https://raw.githubusercontent.com/owid/covid-19-data/master/public/data/testing/covid-testing-all-observations.csv"))
@@ -143,7 +150,16 @@ ui <- fluidPage(title = "COVID-19 Pandemics for the People"
   , fluidRow(
     sidebarLayout(
       sidebarPanel(width = 3
-                   , radioButtons(inputId = "data_column"
+                  , radioButtons(inputId = "echelle_world"
+                                , label = "Analysis scale:"
+                                , choices = c("Country" = "country"
+                                , "Continent" = "continent"
+                                , "World" = "world"
+                                )
+                                , selected = "country"
+                                , inline = TRUE
+                                )
+                  , radioButtons(inputId = "data_column"
                                 , label = "Data to show:"
                                 , choices = c("Total cases" = "total_cases"
                                 , "New cases" = "new_cases"
@@ -153,17 +169,51 @@ ui <- fluidPage(title = "COVID-19 Pandemics for the People"
                                 , selected = "total_cases"
                                 , inline = TRUE
                                 )
-                   , selectInput(inputId = "countries_sel"
-                               , label = "Countries (with at least 1 case):"
-                               , list('Europe' = unique(covdat[covdat$continent == 'Europe',]$location)
-                                      , 'Africa' = unique(covdat[covdat$continent == 'Africa',]$location)
-                                      , 'Americas' = unique(covdat[covdat$continent == 'Americas',]$location)
-                                      , 'Asia' = unique(covdat[covdat$continent == 'Asia',]$location)
-                                      , 'Oceania' = unique(covdat[covdat$continent == 'Oceania',]$location)
-                                    )
-                               , selected = c("France", "Italy", "Germany", "Spain", "Poland", "South Korea", "United Kingdom", "United States")
-                               , multiple = TRUE
-                               )
+                    , conditionalPanel(
+                                  condition = "input.echelle_world == 'continent'"
+                                  , selectInput(inputId = "continents_sel"
+                                        , label = "Continents:"
+                                        , list('Europe'
+                                               , 'Africa'
+                                               , 'Americas'
+                                               , 'Asia'
+                                               , 'Oceania'
+                                               )
+                                          , selected = c("Africa", "Americas", "Asia", "Europe", "Oceania"
+                                                   )
+                                          , multiple = TRUE
+                                                  )
+                                                  )
+                  , conditionalPanel(
+                                condition = "input.echelle_world == 'continent'"
+                                , selectInput(inputId = "continents_sel"
+                                      , label = "Continents:"
+                                      , list('Europe'
+                                             , 'Africa'
+                                             , 'Americas'
+                                             , 'Asia'
+                                             , 'Oceania'
+                                             )
+                                      , selected = c("Africa", "Americas", "Asia", "Europe", "Oceania"
+                                               )
+                                      , multiple = TRUE
+                                            )
+                                            )
+                    , conditionalPanel(
+                                condition = "input.echelle_world == 'country'"
+                                , selectInput(inputId = "countries_sel"
+                                  , label = "Countries (with at least 1 case):"
+                                    , list('Europe' = unique(covdat[covdat$continent == 'Europe',]$location)
+                                          , 'Africa' = unique(covdat[covdat$continent == 'Africa',]$location)
+                                          , 'Americas' = unique(covdat[covdat$continent == 'Americas',]$location)
+                                          , 'Asia' = unique(covdat[covdat$continent == 'Asia',]$location)
+                                          , 'Oceania' = unique(covdat[covdat$continent == 'Oceania',]$location)
+                                          )
+                                    , selected = c("France", "Italy", "Germany", "Spain", "Poland", "South Korea", "United Kingdom", "United States"
+                                                  )
+                                    , multiple = TRUE
+                                          )
+                                          )
                    , strong("Plot options:")
                    , em("For curves (multiple selections allowed)")
                                , checkboxInput(inputId="log"
@@ -293,10 +343,10 @@ ui <- fluidPage(title = "COVID-19 Pandemics for the People"
                                     , selected = 0
                                     , inline = TRUE
                                     )
-                        ,     conditionalPanel(
+                        , conditionalPanel(
                               condition = "input.echelle == 'departement'"
                               , selectInput(inputId = "dep_sel"
-                                    , label = "Départements (with at least 1 case):"
+                                    , label = "Departements (with at least 1 case):"
                                         , list(
                                             'Auvergne-Rhône-Alpes'	= unique(france.df[france.df$region_name == 'Auvergne-Rhone-Alpes',]$dep)
                                             , 'Bourgogne-Franche-Comté'	= unique(france.df[france.df$region_name == 'Bourgogne-Franche-Comté',]$dep)
@@ -457,7 +507,29 @@ server <- function(input, output, session) {
           ###############################
 
 
+
+
   output$worldplot <- renderPlot({
+
+#      dates_range <- seq(input$dates[1], input$dates[2], by = "days")
+              if(input$echelle_world == "continent")
+                  {
+                  data_selected <- continents.df[(continents.df$location %in% input$continents_sel),]
+                  }
+                  else if(input$echelle_world == "country")
+                  {
+                  data_selected <- covdat[(covdat$location %in% input$countries_sel),]
+                  }
+                  else
+                  {
+                  data_selected <- world.df
+                  }
+
+
+
+
+
+
 
       if(input$map | input$xyplot){
         sPDF <- joinCountryData2Map(map.df.2
@@ -498,9 +570,9 @@ server <- function(input, output, session) {
       #  DAT.0 = covdat[covdat$location %in% input$countries_sel, COLS]
         #DAT.0 = covdat[covdat$location %in% input$countries_sel, c("date", "location", "new_deaths")]
         if(input$data_column == "new_cases"){
-            DAT.0 = covdat[covdat$location %in% input$countries_sel, c(2, 3, 4)]
+            DAT.0 = data_selected[data_selected$location %in% input$countries_sel, c(2, 3, 4)]
         } else if(input$data_column == "new_deaths") {
-            DAT.0 = covdat[covdat$location %in% input$countries_sel, c(2, 3, 5)]
+            DAT.0 = data_selected[data_selected$location %in% input$countries_sel, c(2, 3, 5)]
         } else {stop(safeError(("Incompatible Data to show / plot option combination")))}
         #
         names(DAT.0) <- c("date", "location", "data")
@@ -550,29 +622,29 @@ server <- function(input, output, session) {
 ###############################
 
     if(input$sync){
-  #        before <- which(covdat$total_cases == 0)
-          before <- which(covdat$total_cases < input$num.min)
-          covdat.sync <- covdat[-before, ]
-          covdat.sync$J <- 0
-          for (c in unique(covdat.sync$location)){
-          				L <- dim(covdat.sync[covdat.sync$location == c, ])[1]
-          				covdat.sync[covdat.sync$location == c, "J"] <- seq(length = L)
+  #        before <- which(data_selected$total_cases == 0)
+          before <- which(data_selected$total_cases < input$num.min)
+          data_selected.sync <- data_selected[-before, ]
+          data_selected.sync$J <- 0
+          for (c in unique(data_selected.sync$location)){
+          				L <- dim(data_selected.sync[data_selected.sync$location == c, ])[1]
+          				data_selected.sync[data_selected.sync$location == c, "J"] <- seq(length = L)
                   }
           dates_range <- seq(input$dates[1], input$dates[2], by = "days")
-          covdat_selected <- covdat.sync[(covdat.sync$location %in% input$countries_sel) & (covdat.sync$date %in% dates_range),]
+          covdat_selected <- data_selected.sync[data_selected.sync$date %in% dates_range, ]
           } else {
           dates_range <- seq(input$dates[1], input$dates[2], by = "days")
-          covdat_selected <- covdat[(covdat$location %in% input$countries_sel),]
+          covdat_selected <- data_selected[data_selected$date %in% dates_range, ]
           }
 
     ######
     myplot <- ggplot(covdat_selected) +
           #scale_color_brewer(palette="Paired", name = "Country")
-          scale_color_discrete(name = "Countries:") +
+          scale_color_discrete(name = "Locations:") +
           theme_linedraw(base_size = 15)
     ######
     #    dates_range <- seq(input$dates[1], input$dates[2], by = "days")
-    #    covdat_selected <- covdat[(covdat$location %in% input$countries_sel) & (covdat$date %in% dates_range),]
+    #    covdat_selected <- data_selected[(data_selected$location %in% input$countries_sel) & (data_selected$date %in% dates_range),]
 
 
 
