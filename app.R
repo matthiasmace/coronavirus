@@ -108,7 +108,7 @@ lits.dep <- as.data.frame(read.csv("./data_france/Lits_2013_2018.csv", header = 
 france.df <- inner_join(france.df, lits.dep, by = c("dep"= "dep"))
 #
 ##### regions
-regions.df <- aggregate(list(france.df[, -c(1:6)]), by=list(Sexe = france.df$sexe, Region = france.df$region_name, jour = france.df$jour), FUN=sum)
+regions.df <- aggregate(list(france.df[, -c(1:5)]), by=list(Sexe = france.df$sexe, Region = france.df$region_name, jour = france.df$jour), FUN=sum)
 #pop.reg <- as.data.frame(read.csv("./data_france/ensemble/Regions.csv", header = T, sep =";"))
 
 ########################################################################################################
@@ -276,10 +276,10 @@ ui <- fluidPage(title = "COVID-19 Pandemics for the People"
       , tabPanel("Donnees Francaises"
         , fluidRow(
         column(12,
-          h1("Covid-19 pour le peuple", align="center")
-          , h2("Page de Visualisation et d'Analyse de données de la pandémie due au SARS-CoV-2", align="center")
-          , p("Données Source",
-                  a("Santé Publique France / data.gouv.fr",
+          h1("Covid-19 pour le Tou.te.s", align="center")
+          , h2("Page de Visualisation et d'Analyse de donnees de la pandemie due au SARS-CoV-2", align="center")
+          , p("Donnees Source",
+                  a("Sante Publique France / data.gouv.fr",
                     href="https://www.data.gouv.fr/fr/organizations/sante-publique-france/")
             #      , "| Link to the dataset (last updated "
             #      , modifdate
@@ -310,7 +310,7 @@ ui <- fluidPage(title = "COVID-19 Pandemics for the People"
                                     , inline = TRUE
                                     )
                         , radioButtons(inputId = "data_column_fr"
-                                     , label = "Données a montrer :"
+                                     , label = "Donnees a montrer :"
                                      , choices = c("Hospitalises" = "hosp"
                                      , "Saturation Hospitalisation" = 'hosp_sat'
                                      , "Reanimation" = "rea"
@@ -336,8 +336,8 @@ ui <- fluidPage(title = "COVID-19 Pandemics for the People"
                               , selectInput(inputId = "dep_sel"
                                     , label = "Departements (with at least 1 case):"
                                         , list(
-                                            'Auvergne-Rhône-Alpes'	= unique(france.df[france.df$region_name == 'Auvergne-Rhone-Alpes',]$dep)
-                                            , 'Bourgogne-Franche-Comté'	= unique(france.df[france.df$region_name == 'Bourgogne-Franche-Comté',]$dep)
+                                            'Auvergne-Rhone-Alpes'	= unique(france.df[france.df$region_name == 'Auvergne-Rhone-Alpes',]$dep)
+                                            , 'Bourgogne-Franche-Comte'	= unique(france.df[france.df$region_name == 'Bourgogne-Franche-Comte',]$dep)
                                             , 'Bretagne'	= unique(france.df[france.df$region_name == 'Bretagne',]$dep)
                                             , 'Centre-Val de Loire'	= unique(france.df[france.df$region_name == 'Centre-Val de Loire',]$dep)
                                             , 'Corse'	= unique(france.df[france.df$region_name == 'Corse',]$dep)
@@ -345,14 +345,14 @@ ui <- fluidPage(title = "COVID-19 Pandemics for the People"
                                             , 'Guadeloupe'	= unique(france.df[france.df$region_name == 'Guadeloupe',]$dep)
                                             , 'Guyane'	= unique(france.df[france.df$region_name == 'Guyane',]$dep)
                                             , 'Hauts-de-France'	= unique(france.df[france.df$region_name == 'Hauts-de-France',]$dep)
-                                            , 'Île-de-France'	= unique(france.df[france.df$region_name == 'Ile-de-France',]$dep)
-                                            , 'La Réunion'	= unique(france.df[france.df$region_name == 'La Reunion',]$dep)
+                                            , 'Ile-de-France'	= unique(france.df[france.df$region_name == 'Ile-de-France',]$dep)
+                                            , 'La Reunion'	= unique(france.df[france.df$region_name == 'La Reunion',]$dep)
                                             , 'Martinique'	= unique(france.df[france.df$region_name == 'Martinique',]$dep)
                                             , 'Normandie'	= unique(france.df[france.df$region_name == 'Normandie',]$dep)
                                             , 'Nouvelle-Aquitaine'	= unique(france.df[france.df$region_name == 'Nouvelle-Aquitaine',]$dep)
                                             , 'Occitanie'	= unique(france.df[france.df$region_name == 'Occitanie',]$dep)
                                             , 'Pays de la Loire'	= unique(france.df[france.df$region_name == 'Pays de la Loire',]$dep)
-                                            , "Provence-Alpes-Côte d'Azur"	= unique(france.df[france.df$region_name == "Provence-Alpes-Cote d'Azur",]$dep)
+                                            , "Provence-Alpes-Cote d'Azur"	= unique(france.df[france.df$region_name == "Provence-Alpes-Cote d'Azur",]$dep)
                                             )
                                     , selected = c(66, 31, 47, 11, 75, 67, 68
                                         )
@@ -436,7 +436,7 @@ ui <- fluidPage(title = "COVID-19 Pandemics for the People"
                   #                    , selected = c("NONE")
                   #                    )
                          , checkboxInput(inputId="map.fr"
-                                      , label = "Affichage des données sur une carte"
+                                      , label = "Affichage des donnees sur une carte"
                                       , value = FALSE
                                       )
                   #     , checkboxInput(inputId="corrmap",
@@ -1110,7 +1110,7 @@ output$franceplot <- renderPlot({
             #          , options = list(opts_selection(type = "single", only_shiny = FALSE)
             #                          )
             #          )
-                myplot + labs(caption = "Donnees Santé Publique France et DREES")
+                myplot + labs(caption = "Donnees Sante Publique France et DREES")
                 )
               }
               )
