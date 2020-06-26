@@ -184,21 +184,6 @@ ui <- fluidPage(title = "COVID-19 Pandemics for the People"
                                           , multiple = TRUE
                                                   )
                                                   )
-                  , conditionalPanel(
-                                condition = "input.echelle_world == 'continent'"
-                                , selectInput(inputId = "continents_sel"
-                                      , label = "Continents:"
-                                      , list('Europe'
-                                             , 'Africa'
-                                             , 'Americas'
-                                             , 'Asia'
-                                             , 'Oceania'
-                                             )
-                                      , selected = c("Africa", "Americas", "Asia", "Europe", "Oceania"
-                                               )
-                                      , multiple = TRUE
-                                            )
-                                            )
                     , conditionalPanel(
                                 condition = "input.echelle_world == 'country'"
                                 , selectInput(inputId = "countries_sel"
@@ -230,7 +215,10 @@ ui <- fluidPage(title = "COVID-19 Pandemics for the People"
                                 )
                    , hr(style="border-color: black")
                    , checkboxInput(inputId="R0",
-                                 label = "Sliding R0 computation (select 'new_cases' or 'new_deaths') \n Please be patient, it takes up to several minutes ! \n (remove South Korea & China before if performing on death toll)"
+                                 label = "Sliding R0 computation (select 'new_cases' or 'new_deaths')
+                                 \n Please be patient, it takes up to several minutes !
+                                 \n (remove South Korea & China before if performing on death toll)
+                                 \n (if it does not work, increase from 10 to at least 100 the minimal number above)"
                                  #(choose the computing window in days)
                                  , value = FALSE)
                    , column(5
@@ -526,11 +514,6 @@ server <- function(input, output, session) {
                   }
 
 
-
-
-
-
-
       if(input$map | input$xyplot){
         sPDF <- joinCountryData2Map(map.df.2
         , joinCode = "ISO2"
@@ -569,11 +552,16 @@ server <- function(input, output, session) {
       #  COLS <- c(which(names(covdat) %in% c("date", "location", input$data_column)))
       #  DAT.0 = covdat[covdat$location %in% input$countries_sel, COLS]
         #DAT.0 = covdat[covdat$location %in% input$countries_sel, c("date", "location", "new_deaths")]
-        if(input$data_column == "new_cases"){
-            DAT.0 = data_selected[data_selected$location %in% input$countries_sel, c(2, 3, 4)]
-        } else if(input$data_column == "new_deaths") {
-            DAT.0 = data_selected[data_selected$location %in% input$countries_sel, c(2, 3, 5)]
-        } else {stop(safeError(("Incompatible Data to show / plot option combination")))}
+
+
+        eval(parse(text = paste("DAT.0 = data_selected[, c('date', 'location', '", input$data_column, "')]", sep = "")))
+
+
+  #      if(input$data_column == "new_cases"){
+  #          DAT.0 = data_selected[, c(2, 3, 4)]
+  #      } else if(input$data_column == "new_deaths") {
+  #          DAT.0 = data_selected[, c(2, 3, 5)]
+  #      } else {stop(safeError(("Incompatible Data to show / plot option combination")))}
         #
         names(DAT.0) <- c("date", "location", "data")
         RES <- list()
@@ -588,8 +576,8 @@ server <- function(input, output, session) {
         for(c in unique(DAT.0$location)){
           DAT.1 <- DAT.0[DAT.0$location == c  & (DAT.0$data >= input$num.min), ]
           rownames(DAT.1) <- DAT.1$date
-          DAT.1 <- DAT.1[, -c(1, 2)]
-          es_uncertain_si <- estimate_R(DAT.1,
+          DAT.2 <- DAT.1[, -c(1, 2)]
+          es_uncertain_si <- estimate_R(DAT.2,
                                          method = "uncertain_si",
                                          config = config)
           #
