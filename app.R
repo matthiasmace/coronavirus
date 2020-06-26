@@ -208,7 +208,9 @@ ui <- fluidPage(title = "COVID-19 Pandemics for the People"
                   , checkboxInput(inputId="dailyscale",
                                  label = "Plot daily breaks on x axis", value = FALSE)
                   , checkboxInput(inputId="sync",
-                                 label = "Synchronize national epidemics (minimal cases/deaths to begin with)", value = FALSE)
+                                 label = "Synchronize national epidemics (minimal cases/deaths to begin with)
+                                 \n (if it does not work, increase from 10 to at least 100 the minimal number below)"
+                                 , value = FALSE)
                   , numericInput(inputId = "num.min"
                                 , label = ""
                                 , value = 10
@@ -396,7 +398,9 @@ ui <- fluidPage(title = "COVID-19 Pandemics for the People"
                        , checkboxInput(inputId="dailyscale_fr",
                                       label = "Plot daily breaks on x axis", value = FALSE)
                        , checkboxInput(inputId="sync_fr",
-                                      label = "Synchroniser les epidemies departementales/regionales (nombre minimal de cas/morts pour definir le debut)", value = FALSE)
+                                      label = "Synchroniser les epidemies departementales/regionales (nombre minimal de cas/morts pour definir le debut)
+                                      \n (si ne fonctionne pas : augmenter de 10 a 100 la valeur minimale ci-dessous)"
+                                      , value = FALSE)
                        , numericInput(inputId = "num.min.fr"
                                      , label = ""
                                      , value = 10
