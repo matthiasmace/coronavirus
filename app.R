@@ -201,6 +201,12 @@ ui <- fluidPage(title = "COVID-19 Pandemics for the People"
                                           )
                    , strong("Plot options:")
                    , em("For curves (multiple selections allowed)")
+                              , numericInput(inputId = "linewidth"
+                                  , label = "Width of plot line"
+                                  , value = 3
+                                  )
+                               , checkboxInput(inputId="smoothed"
+                                  , label = "Smoothed curve", value = FALSE)
                                , checkboxInput(inputId="log"
                                  , label = "Plot y axis on log scale", value = FALSE)
                                , checkboxInput(inputId="percapita",
@@ -486,20 +492,21 @@ ui <- fluidPage(title = "COVID-19 Pandemics for the People"
                   )
 
 
+#############################################################################################
 
 # Define server logic required to draw a histogram ----
 server <- function(input, output, session) {
           #  onevent("mouseover", "R0", alert("aide R0"))
           #  onevent("mouseleave", "R0", alert("aide R0"))
 
-          ############################### world
+          ###############################
           # 1. It is "reactive" and therefore should be automatically
           #    re-executed when inputs (input$countries) change
           # 2. Its output type is a plot
           ###############################
 
 
-
+############################### world
 
   output$worldplot <- renderPlot({
 
@@ -623,14 +630,14 @@ server <- function(input, output, session) {
           				data_selected.sync[data_selected.sync$location == c, "J"] <- seq(length = L)
                   }
           dates_range <- seq(input$dates[1], input$dates[2], by = "days")
-          covdat_selected <- data_selected.sync[data_selected.sync$date %in% dates_range, ]
-          } else {
+          data_selected.def <- data_selected.sync[data_selected.sync$date %in% dates_range, ]
+        } else {
           dates_range <- seq(input$dates[1], input$dates[2], by = "days")
-          covdat_selected <- data_selected[data_selected$date %in% dates_range, ]
+          data_selected.def <- data_selected[data_selected$date %in% dates_range, ]
           }
 
     ######
-    myplot <- ggplot(covdat_selected) +
+    myplot <- ggplot() +
           #scale_color_brewer(palette="Paired", name = "Country")
           scale_color_discrete(name = "Locations:") +
           theme_linedraw(base_size = 15)
@@ -642,43 +649,67 @@ server <- function(input, output, session) {
 
     if(input$sync){
     if(input$percapita){
-    myplot <- myplot + labs(x = "Date", y = "Number per capita")
+#    myplot <- myplot + labs(x = "Date", y = "Number per capita")
     if(input$data_column == "total_cases"){
-      myplot <- myplot + geom_line(mapping = aes(x = J, y = total_cases_percapita, colour = location), size=1)+
-                        ggtitle("Number of Confirmed Cases Per Capita throughout time"
-                                , subtitle = "the raw number is divided by the country population")
-                                        }
+      DF <- data_selected.def[, c("date", "total_cases_percapita", "location")]
+      names(DF) <- c("x", "y", "location")
+      myplot <- ggplot(DF, aes(x, y, colour = location))+
+                ggtitle("Number of Confirmed Cases Per Capita throughout time"
+                , subtitle = "the raw number is divided by the country population")
+      }
     else if(input$data_column == "new_cases"){
-      myplot <- myplot + geom_line(mapping = aes(x = J, y = new_cases_percapita, colour = location), size=1)+
-                        ggtitle("Number of Daily New Confirmed Cases Per Capita"
-                                , subtitle = "the raw number is divided by the country population")}
+    DF <- data_selected.def[, c("date", "new_cases_percapita", "location")]
+    names(DF) <- c("x", "y", "location")
+    myplot <- ggplot(DF, aes(x, y, colour = location))+
+              ggtitle("Number of Daily New Confirmed Cases Per Capita"
+              , subtitle = "the raw number is divided by the country population")
+      }
     else if(input$data_column == "total_deaths"){
-      myplot <- myplot + geom_line(mapping = aes(x = J, y = total_deaths_percapita, colour = location), size=1)+
-                        ggtitle("Number of Deaths Per Capita throughout time"
-                                , subtitle = "the raw number is divided by the country population")}
+    DF <- data_selected.def[, c("date", "total_deaths_percapita", "location")]
+    names(DF) <- c("x", "y", "location")
+    myplot <- ggplot(DF, aes(x, y, colour = location))+
+              ggtitle("Number of Deaths Per Capita throughout time"
+              , subtitle = "the raw number is divided by the country population")
+    }
     else if(input$data_column == "new_deaths"){
-      myplot <- myplot + geom_line(mapping = aes(x = J, y = new_deaths_percapita, colour = location), size=1)+
-                        ggtitle("Number of Daily New Deaths Per Capita"
-                                , subtitle = "the raw number is divided by the country population")}
+    DF <- data_selected.def[, c("date", "new_deaths_percapita", "location")]
+    names(DF) <- c("x", "y", "location")
+    myplot <- ggplot(DF, aes(x, y, colour = location))+
+              ggtitle("Number of Daily New Deaths Per Capita"
+              , subtitle = "the raw number is divided by the country population")
+    }
     }  else {
+
     myplot <- myplot + labs(x = "Date", y = "Raw Number")
     if(input$data_column == "total_cases"){
-      myplot <- myplot + geom_line(mapping = aes(x = J, y = total_cases, colour = location), size=1)+
-                        ggtitle("Number of Confirmed Cases throughout time")
-                        }
+      DF <- data_selected.def[, c("date", "total_cases", "location")]
+      names(DF) <- c("x", "y", "location")
+      myplot <- ggplot(DF, aes(x, y, colour = location))+
+                ggtitle("Number of Confirmed Cases throughout time"
+                )
+                }
     else if(input$data_column == "new_cases"){
-      myplot <- myplot + geom_line(mapping = aes(x = J, y = new_cases, colour = location), size=1)+
-                        ggtitle("Number of Daily New Confirmed Cases")
-                        }
+    DF <- data_selected.def[, c("date", "new_cases", "location")]
+    names(DF) <- c("x", "y", "location")
+    myplot <- ggplot(DF, aes(x, y, colour = location))+
+              ggtitle("Number of Daily New Confirmed Cases"
+              )
+              }
     else if(input$data_column == "total_deaths"){
-      myplot <- myplot + geom_line(mapping = aes(x = J, y = total_deaths, colour = location), size=1)+
-                        ggtitle("Number of Deaths throughout time")
-                        }
+    DF <- data_selected.def[, c("date", "total_deaths", "location")]
+    names(DF) <- c("x", "y", "location")
+    myplot <- ggplot(DF, aes(x, y, colour = location))+
+              ggtitle("Number of Deaths throughout time"
+              )
+              }
     else if(input$data_column == "new_deaths"){
-      myplot <- myplot + geom_line(mapping = aes(x = J, y = new_deaths, colour = location), size=1)+
-                        ggtitle("Number of Daily New Deaths")
-                        }
-    }
+    DF <- data_selected.def[, c("date", "new_deaths_percapita", "location")]
+    names(DF) <- c("x", "y", "location")
+    myplot <- ggplot(DF, aes(x, y, colour = location))+
+              ggtitle("Number of Daily New Deaths"
+              )
+              }
+            }
     } else if(input$R0){
         myplot <- ggplot(data = RES, aes(x = J, y = R0_point, colour = location)) +
         geom_line(size = 1)+
@@ -693,45 +724,61 @@ server <- function(input, output, session) {
         xlim(-length(unique(RES$J)), 0)+
         theme_minimal()
       } else {
+
     if(input$percapita){
       myplot <- myplot + labs(x = "Date", y = "Number per capita")
       if(input$data_column == "total_cases"){
-        myplot <- myplot + geom_line(mapping = aes(x = date, y = total_cases_percapita, colour = location), size=1)+
-                          ggtitle("Number of Confirmed Cases Per Capita throughout time"
-                          , subtitle = "the raw number is divided by the country population")
-                          }
-      else if(input$data_column == "new_cases"){
-        myplot <- myplot + geom_line(mapping = aes(x = date, y = new_cases_percapita, colour = location), size=1)+
-                          ggtitle("Number of Daily New Confirmed Cases Per Capita"
+        DF <- data_selected.def[, c("date", "total_cases_percapita", "location")]
+        names(DF) <- c("x", "y", "location")
+        myplot <- ggplot(DF, aes(x, y, colour = location))+
+                        ggtitle("Number of Confirmed Cases per capita throughout time"
+                                , subtitle = "the raw number is divided by the country population")
+                                }
+        else if(input$data_column == "new_cases"){
+        DF <- data_selected.def[, c("date", "new_cases_percapita", "location")]
+        names(DF) <- c("x", "y", "location")
+        myplot <- ggplot(DF, aes(x, y, colour = location))+
+                          ggtitle("Number of Daily New Confirmed Cases per capita"
                                   , subtitle = "the raw number is divided by the country population")
                                   }
       else if(input$data_column == "total_deaths"){
-        myplot <- myplot + geom_line(mapping = aes(x = date, y = total_deaths_percapita, colour = location), size=1)+
+        DF <- data_selected.def[, c("date", "total_deaths_percapita", "location")]
+        names(DF) <- c("x", "y", "location")
+        myplot <- ggplot(DF, aes(x, y, colour = location))+
                           ggtitle("Number of Deaths Per Capita throughout time"
                                   , subtitle = "the raw number is divided by the country population")
                                   }
       else if(input$data_column == "new_deaths"){
-        myplot <- myplot + geom_line(mapping = aes(x = date, y = new_deaths_percapita, colour = location), size=1)+
+        DF <- data_selected.def[, c("date", "new_deaths_percapita", "location")]
+        names(DF) <- c("x", "y", "location")
+        myplot <- ggplot(DF, aes(x, y, colour = location))+
                           ggtitle("Number of Daily New Deaths Per Capita"
                                   , subtitle = "the raw number is divided by the country population")
                                   }
-        }
-        else{
+        } else {
           myplot <- myplot + labs(x = "Date", y = "Raw Number")
           if(input$data_column == "total_cases"){
-            myplot <- myplot + geom_line(mapping = aes(x = date, y = total_cases, colour = location), size=1)+
+            DF <- data_selected.def[, c("date", "total_cases", "location")]
+            names(DF) <- c("x", "y", "location")
+            myplot <- ggplot(DF, aes(x, y, colour = location))+
                               ggtitle("Number of Confirmed Cases throughout time")
                               }
           else if(input$data_column == "new_cases"){
-            myplot <- myplot + geom_line(mapping = aes(x = date, y = new_cases, colour = location), size=1)+
+            DF <- data_selected.def[, c("date", "new_cases", "location")]
+            names(DF) <- c("x", "y", "location")
+            myplot <- ggplot(DF, aes(x, y, colour = location))+
                               ggtitle("Number of Daily New Confirmed Cases")
                               }
           else if(input$data_column == "total_deaths"){
-            myplot <- myplot + geom_line(mapping = aes(x = date, y = total_deaths, colour = location), size=1)+
+            DF <- data_selected.def[, c("date", "total_deaths", "location")]
+            names(DF) <- c("x", "y", "location")
+            myplot <- ggplot(DF, aes(x, y, colour = location))+
                               ggtitle("Number of Deaths throughout time")
                               }
           else if(input$data_column == "new_deaths"){
-            myplot <- myplot + geom_line(mapping = aes(x = date, y = new_deaths, colour = location), size=1)+
+            DF <- data_selected.def[, c("date", "new_deaths", "location")]
+            names(DF) <- c("x", "y", "location")
+            myplot <- ggplot(DF, aes(x, y, colour = location))+
                               ggtitle("Number of Daily New Deaths")
                               }
         }
@@ -779,9 +826,8 @@ if(input$map){
                     , size = 2)+
                     labs(x = social.var, y = var)+
                     theme_minimal()
-    } else {stop(safeError(("Incompatible Data to show / plot option combination")))}
-}
-    if(input$corrmap){
+        } else {stop(safeError(("Incompatible Data to show / plot option combination")))}
+    } else if(input$corrmap) {
       labs = names(map.df.2[, -c(1:3)])
         myplot <- corrgram(map.df.2[, -c(1:3)]
           #          , lower.panel = panel.shade
@@ -792,14 +838,30 @@ if(input$map){
                     , outer.labels = list(bottom=list(labels=labs,cex = 0.5, srt = 15),
                                 left=list(labels=labs,cex = 0.5, srt = -75))
                     )
+      } else {
+        if(input$smoothed){
+          myplot <- myplot+ geom_smooth(data = DF, aes(x, y, colour = location), method = "loess")
+          } else {
+          myplot <- myplot+ geom_line(size = input$linewidth)
+                  }
+        if(input$log){
+          myplot <- myplot+
+                        scale_y_log10()+
+                        labs(x = "Date", y = "log Number")
+        } else {
+          myplot <- myplot+labs(x = "Date", y = "Number")
+                      }
+
+        if(input$dailyscale){
+            myplot <- myplot+
+                        scale_x_date(date_minor_breaks = "1 day")
+                      }
+
+        myplot <- myplot+
+                      theme_linedraw(base_size = 15)
+
       }
 
-      if(input$log){
-        myplot <- myplot + scale_y_log10()
-      }
-      if(input$dailyscale){
-        myplot <- myplot + scale_x_date(date_minor_breaks = "1 day")
-    }
       return(myplot)
   }
 )
@@ -1102,6 +1164,7 @@ output$franceplot <- renderPlot({
                                       theme_minimal()
                     }
                 }
+
 
                 if(input$log_fr){
                 myplot <- myplot + scale_y_log10()
