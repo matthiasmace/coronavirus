@@ -1,4 +1,7 @@
 library(shiny)
+library(shinyWidgets)
+library(BBmisc)
+library(shinydashboard)
 #library(shinyjs)
 library(curl)
 library(data.table)
@@ -39,8 +42,10 @@ covdat$iso2c <- countrycode(covdat$location, origin = 'country.name', destinatio
 #get continents
 covdat$continent <- countrycode(covdat$location, origin = 'country.name', destination ='continent')
 #get population_2018
-pop_data <- wb(country = c(unique(covdat$iso2c)), indicator = "SP.POP.TOTL", startdate = 2018, enddate = 2018)
-covdat <- merge(covdat, pop_data[,c('iso2c', 'value')], by='iso2c')
+pop_data <- wb(country = c(unique(covdat$iso2c)), indicator = "SP.POP.TOTL", startdate = 2019, enddate = 2019)
+#covdat <- merge(covdat, pop_data[,c('iso2c', 'value')], by='iso2c')
+covdat <- dplyr::inner_join(covdat, pop_data[,c('iso2c', 'value')], by = c("iso2c"= "iso2c"))
+
 names(covdat)[names(covdat) == "value"] <- "population"
 
 #get values corrected for population
@@ -84,10 +89,37 @@ TTT <- inner_join(covdat, tests.df, by = c("iso2c"= "ISO.code", "date" = "Date")
 
 ################    FRANCE Data
 ##### departements
-##  Hospit data
+##  Tests data
+tests.fr.df <- as.data.frame(read.csv("https://www.data.gouv.fr/fr/datasets/r/406c6a23-e283-4300-9484-54e78c8ae675", header = T, sep =";"))
+tests.fr.df$incid <- (tests.fr.df$P*100)/tests.fr.df$T
+tests.fr.df$neg <- tests.fr.df$T - tests.fr.df$P
+names(tests.fr.df) <- c("dep", "jour", "pos", "n_tests", "cl_age90", "incid", "neg")
+
+################################################################
+##    ON A DES DONNEES PAR CLASSE D AGE QU ON N UTILISE PAS   ##
+################################################################
+
+############  Hospit data
 france.df <- as.data.frame(read.csv("https://www.data.gouv.fr/fr/datasets/r/63352e38-d353-4b54-bfd1-f1b3ee1cabd7", header = T, sep =";"))
 #france.df <- as.data.frame(read.csv("63352e38-d353-4b54-bfd1-f1b3ee1cabd7", header = T, sep =";"))
+
+
+######  donnees EHPAD / non dispo par departement......
+##### verifier fiabilite de https://github.com/opencovid19-fr/data/raw/master/dist/chiffres-cles.csv
+france.ehpad <- as.data.frame(read.csv("https://github.com/opencovid19-fr/data/raw/master/dist/chiffres-cles.csv", header = T, sep =","))
+#france.ehpad$maille_code <- gsub("DEP-", "", france.ehpad$maille_code)
+#france.ehpad$date <- as.Date(france.ehpad$date)
+#france.ehpad <- france.ehpad[france.ehpad$granularite == "departement", c("date", "maille_code", "deces_ehpad")]
+#france.ehpad[which(!is.na(france.ehpad$deces_ehpad))]
+
+##### une reciprocal cumsum serait interessante pour plotter le nombre de morts quotidiens
+
+## fusion avec TESTS
+france.df <- left_join(france.df, tests.fr.df[tests.fr.df$cl_age90 == 0, ], by = c("dep" = "dep", "jour" = "jour"))
+
 france.df$jour <- as.Date(france.df$jour)
+
+##  fusion avec regions
 #france.df$dep <- as.character(as.numeric(france.df$dep))
 france.regions <- as.data.frame(read.csv("https://www.data.gouv.fr/en/datasets/r/987227fb-dcb2-429e-96af-8979f97c9c84", stringsAsFactors = FALSE))
 #france.regions <- as.data.frame(rbind(france.regions, c("75", "Paris", "11", "\303\216le-de-France")))
@@ -102,7 +134,7 @@ france.df$region_name <- gsub("\303\216le-de-France", "Ile-de-France", france.df
 
 #
 pop.dep <- as.data.frame(read.csv("./data_france/ensemble/Departements.csv", header = T, sep =";"))
-france.df <- inner_join(france.df, pop.dep, by = c("dep"= "CODDEP"))[, c("dep","DEP", "region_name","sexe","jour", "hosp","rea","rad","dc","PTOT")]
+france.df <- inner_join(france.df, pop.dep, by = c("dep"= "CODDEP"))[, c("dep","DEP", "region_name","sexe","jour", "hosp","rea","rad","dc", "pos", "n_tests", "incid", "neg", "PTOT")]
 #
 lits.dep <- as.data.frame(read.csv("./data_france/Lits_2013_2018.csv", header = T, sep =";"))
 france.df <- inner_join(france.df, lits.dep, by = c("dep"= "dep"))
@@ -110,6 +142,8 @@ france.df <- inner_join(france.df, lits.dep, by = c("dep"= "dep"))
 ##### regions
 regions.df <- aggregate(list(france.df[, -c(1:5)]), by=list(Sexe = france.df$sexe, Region = france.df$region_name, jour = france.df$jour), FUN=sum)
 #pop.reg <- as.data.frame(read.csv("./data_france/ensemble/Regions.csv", header = T, sep =";"))
+## attention !!!! l'incidence est sommée > recalculer
+regions.df$incid <- (regions.df$pos*100)/regions.df$n_tests
 
 ########################################################################################################
 # Define UI for app that draws a histogram ----
@@ -199,6 +233,21 @@ ui <- fluidPage(title = "COVID-19 Pandemics for the People"
                                     , multiple = TRUE
                                           )
                                           )
+#                                , dropdownButton(
+#                                                #          tags$h3("List of Input")
+#                                                 #          , selectInput(inputId = 'xcol', label = 'X Variable', choices = names(iris))
+#                                                            selectInput(inputId = 'data_column', label = 'Data to plot'
+#                                                                     , choices = c("Total cases" = "total_cases"
+#                                                                       , "New cases" = "new_cases"
+#                                                                       , "Total deaths" = "total_deaths"
+#                                                                       , "New deaths" = "new_deaths"
+#                                                                       )
+#                                                                       , selected = "total_cases"
+#                                                                       )
+#                                                    #            , sliderInput(inputId = 'clusters', label = 'Cluster count', value = 3, min = 1, max = 9)
+#                                                             , circle = TRUE, status = "danger", icon = icon("gear"), width = "300px"
+#                                                             , tooltip = tooltipOptions(title = "Click to see inputs !")
+#                                                               )
                    , strong("Plot options:")
                    , em("For curves (multiple selections allowed)")
                               , numericInput(inputId = "linewidth"
@@ -215,36 +264,48 @@ ui <- fluidPage(title = "COVID-19 Pandemics for the People"
                                  label = "Plot daily breaks on x axis", value = FALSE)
                   , checkboxInput(inputId="sync",
                                  label = "Synchronize national epidemics (minimal cases/deaths to begin with)
-                                 \n (if it does not work, increase from 10 to at least 100 the minimal number below)"
+                                 \n (if it does not work, decrease from 10 to at least 100 the minimal number below)"
                                  , value = FALSE)
                   , numericInput(inputId = "num.min"
                                 , label = ""
                                 , value = 10
                                 )
                    , hr(style="border-color: black")
-                   , checkboxInput(inputId="R0",
-                                 label = "Sliding R0 computation (select 'new_cases' or 'new_deaths')
-                                 \n Please be patient, it takes up to several minutes !
-                                 \n (remove South Korea & China before if performing on death toll)
-                                 \n (if it does not work, increase from 10 to at least 100 the minimal number above)"
-                                 #(choose the computing window in days)
-                                 , value = FALSE)
-                   , column(5
+                   ,     HTML(
+                          paste(
+                                h4("Sliding R0 computation (select 'new_cases' or 'new_deaths')")
+                          #      ,'<br/>'
+                                , h5("MAKE SURE to tick graphic options BEFORE !")
+                          #      ,'<br/>'
+                                , h6("Please be patient, it takes up to several minutes !")
+                          #      ,'<br/>'
+                                , h6("(if it does not work for death toll, decrease from 10 for little states)")
+                          #      ,'<br/>'
+                                , h6("(remove South Korea & China before if performing on death toll)")
+                                #,h6("(choose the computing window in days)")
+                                )
+                              )
+                   , column(6
                         , numericInput(inputId = "SI.min"
                                  , label = "Serial Interval Min"
                                  , value = 4
                                  )
                             )
-                   , column(5
+                   , column(6
                         , numericInput(inputId = "SI.max"
                                  , label = "Serial Interval Max"
                                  , value = 8
                                  )
                             )
-                   , numericInput(inputId = "window.R0"
-                                 , label = ""
-                                 , value = 3
-                                 )
+    #               , numericInput(inputId = "window.R0"
+    #                             , label = ""
+    #                             , value = 3
+    #                             )
+                    , checkboxInput(inputId="R0"
+                                    , label = "COMPUTE !"
+                                    , value = FALSE
+                                    )
+                   , hr(style="border-color: black")
                    , hr(style="border-color: black")
                    , strong("Select Socio-Economic Variable to Compare")
                    , selectizeInput(inputId = "socialvar"
@@ -284,7 +345,7 @@ ui <- fluidPage(title = "COVID-19 Pandemics for the People"
       , tabPanel("Donnees Francaises"
         , fluidRow(
         column(12,
-          h1("Covid-19 pour le Tou.te.s", align="center")
+          h1("Covid-19 pour Tou.te.s", align="center")
           , h2("Page de Visualisation et d'Analyse de donnees de la pandemie due au SARS-CoV-2", align="center")
           , p("Donnees Source",
                   a("Sante Publique France / data.gouv.fr",
@@ -304,122 +365,351 @@ ui <- fluidPage(title = "COVID-19 Pandemics for the People"
                     href="https://www.facebook.com/matthias.mace.5"),
                   align = "center"
              )
+          , h4(paste("En France, au moins/environ"
+                                      , max(na.omit(france.ehpad[(france.ehpad$maille_code == "FRA" & france.ehpad$source_type == "ministere-sante"), "deces"]))
+                                      , "(source Ministère de la Sante) /"
+                                      , max(na.omit(france.ehpad[(france.ehpad$maille_code == "FRA" & france.ehpad$source_type == "opencovid19-fr"), "deces"]))
+                                      , "(source opencovid19-fr)"
+                                      , "morts en centre hospitalier et"
+                                      , max(na.omit(france.ehpad[(france.ehpad$maille_code == "FRA" & france.ehpad$source_type == "ministere-sante"), "deces_ehpad"]))
+                                      , "morts en EHPAD depuis le debut de l'epidemie (M. Sante)"
+                                      )
+                        )
+          , h4(paste("Au moins"
+                , (sum(france.df[france.df$jour == max(france.df$jour) & france.df$sexe == 0, "dc"])-sum(france.df[france.df$jour == (max(france.df$jour)-1) & france.df$sexe == 0, "dc"]))
+                , "morts dans les dernieres 24h en centre hospitalier")
+                )
            )
          )
          , fluidRow(
          sidebarLayout(
            sidebarPanel(width = 3
-                        , radioButtons(inputId = "echelle"
-                                    , label = "Echelle d'analyse:"
-                                    , choices = c("Region" = "region"
-                                    , "Departement" = "departement"
-                                    )
-                                    , selected = "departement"
-                                    , inline = TRUE
-                                    )
-                        , radioButtons(inputId = "data_column_fr"
-                                     , label = "Donnees a montrer :"
-                                     , choices = c("Hospitalises" = "hosp"
-                                     , "Saturation Hospitalisation" = 'hosp_sat'
-                                     , "Reanimation" = "rea"
-                                     , "Saturation Reanimation" = 'rea_sat'
-                                     , "Sorties" = "rad"
-                                     , "Decedes" = "dc"
-                                     , "Grouper les 4 categories (histogramme)" = "all"
-                                     )
-                                     , selected = "hosp"
+            , radioButtons(inputId = "echelle"
+                       , label = "Echelle d'analyse:"
+                       , choices = c("Region" = "region"
+                       , "Departement" = "departement"
+                       )
+                       , selected = "departement"
+                       , inline = TRUE
+                       )
+
+           , conditionalPanel(
+                 condition = "input.echelle == 'departement'"
+                 , selectInput(inputId = "dep_sel"
+                       , label = "Departements :"
+                           , list(
+                               'Auvergne-Rhone-Alpes'	= unique(france.df[france.df$region_name == 'Auvergne-Rhone-Alpes',]$dep)
+                               , 'Bourgogne-Franche-Comte'	= unique(france.df[france.df$region_name == 'Bourgogne-Franche-Comte',]$dep)
+                               , 'Bretagne'	= unique(france.df[france.df$region_name == 'Bretagne',]$dep)
+                               , 'Centre-Val de Loire'	= unique(france.df[france.df$region_name == 'Centre-Val de Loire',]$dep)
+                               , 'Corse'	= unique(france.df[france.df$region_name == 'Corse',]$dep)
+                               , 'Grand Est'	= unique(france.df[france.df$region_name == 'Grand Est',]$dep)
+                               , 'Guadeloupe'	= unique(france.df[france.df$region_name == 'Guadeloupe',]$dep)
+                               , 'Guyane'	= unique(france.df[france.df$region_name == 'Guyane',]$dep)
+                               , 'Hauts-de-France'	= unique(france.df[france.df$region_name == 'Hauts-de-France',]$dep)
+                               , 'Ile-de-France'	= unique(france.df[france.df$region_name == 'Ile-de-France',]$dep)
+                               , 'La Reunion'	= unique(france.df[france.df$region_name == 'La Reunion',]$dep)
+                               , 'Martinique'	= unique(france.df[france.df$region_name == 'Martinique',]$dep)
+                               , 'Normandie'	= unique(france.df[france.df$region_name == 'Normandie',]$dep)
+                               , 'Nouvelle-Aquitaine'	= unique(france.df[france.df$region_name == 'Nouvelle-Aquitaine',]$dep)
+                               , 'Occitanie'	= unique(france.df[france.df$region_name == 'Occitanie',]$dep)
+                               , 'Pays de la Loire'	= unique(france.df[france.df$region_name == 'Pays de la Loire',]$dep)
+                               , "Provence-Alpes-Cote d'Azur"	= unique(france.df[france.df$region_name == "Provence-Alpes-Cote d'Azur",]$dep)
+                               )
+                       , selected = c(66, 31, 33, 47, 75, 68, 13, 59, 69
+                           )
+                       , multiple = TRUE
+                       )
+                       )
+              , conditionalPanel(
+                   condition = "input.echelle == 'region'"
+                   , selectInput(inputId = "region_sel"
+                         , label = "Regions :"
+                             , list(
+                             "Auvergne-Rhone-Alpes"
+                             ,"Bourgogne-Franche-Comte"
+                             ,"Bretagne"
+                             ,"Centre-Val de Loire"
+                             ,"Corse"
+                             ,"Grand Est"
+                             ,"Guadeloupe"
+                             ,"Guyane"
+                             ,"Hauts-de-France"
+                             ,"Ile-de-France"
+                             ,"La Reunion"
+                             ,"Martinique"
+                             ,"Normandie"
+                             ,"Nouvelle-Aquitaine"
+                             ,"Occitanie"
+                             ,"Pays de la Loire"
+                             ,"Provence-Alpes-Cote d'Azur"
+                                 )
+                         , selected = c("Grand Est", "Ile-de-France", "Nouvelle-Aquitaine", "Occitanie"
+                             )
+                         , multiple = TRUE
+                         )
+                         )
+                         , radioButtons(inputId = "sexe"
+                                      , label = "Sexe"
+                                      , choices = c("Tous" = 0
+                                               , "Femmes" = 2
+                                               , "Hommes" = 1
+                                               )
+                                     , selected = 0
                                      , inline = TRUE
                                      )
-                        , radioButtons(inputId = "sexe"
-                                     , label = "Sexe"
-                                     , choices = c("Tous" = 0
-                                              , "Femmes" = 2
-                                              , "Hommes" = 1
-                                              )
-                                    , selected = 0
-                                    , inline = TRUE
-                                    )
-                        , conditionalPanel(
-                              condition = "input.echelle == 'departement'"
-                              , selectInput(inputId = "dep_sel"
-                                    , label = "Departements (with at least 1 case):"
-                                        , list(
-                                            'Auvergne-Rhone-Alpes'	= unique(france.df[france.df$region_name == 'Auvergne-Rhone-Alpes',]$dep)
-                                            , 'Bourgogne-Franche-Comte'	= unique(france.df[france.df$region_name == 'Bourgogne-Franche-Comte',]$dep)
-                                            , 'Bretagne'	= unique(france.df[france.df$region_name == 'Bretagne',]$dep)
-                                            , 'Centre-Val de Loire'	= unique(france.df[france.df$region_name == 'Centre-Val de Loire',]$dep)
-                                            , 'Corse'	= unique(france.df[france.df$region_name == 'Corse',]$dep)
-                                            , 'Grand Est'	= unique(france.df[france.df$region_name == 'Grand Est',]$dep)
-                                            , 'Guadeloupe'	= unique(france.df[france.df$region_name == 'Guadeloupe',]$dep)
-                                            , 'Guyane'	= unique(france.df[france.df$region_name == 'Guyane',]$dep)
-                                            , 'Hauts-de-France'	= unique(france.df[france.df$region_name == 'Hauts-de-France',]$dep)
-                                            , 'Ile-de-France'	= unique(france.df[france.df$region_name == 'Ile-de-France',]$dep)
-                                            , 'La Reunion'	= unique(france.df[france.df$region_name == 'La Reunion',]$dep)
-                                            , 'Martinique'	= unique(france.df[france.df$region_name == 'Martinique',]$dep)
-                                            , 'Normandie'	= unique(france.df[france.df$region_name == 'Normandie',]$dep)
-                                            , 'Nouvelle-Aquitaine'	= unique(france.df[france.df$region_name == 'Nouvelle-Aquitaine',]$dep)
-                                            , 'Occitanie'	= unique(france.df[france.df$region_name == 'Occitanie',]$dep)
-                                            , 'Pays de la Loire'	= unique(france.df[france.df$region_name == 'Pays de la Loire',]$dep)
-                                            , "Provence-Alpes-Cote d'Azur"	= unique(france.df[france.df$region_name == "Provence-Alpes-Cote d'Azur",]$dep)
-                                            )
-                                    , selected = c(66, 31, 47, 11, 75, 67, 68
-                                        )
-                                    , multiple = TRUE
-                                    )
-                                    )
-                                    ,     conditionalPanel(
-                                          condition = "input.echelle == 'region'"
-                                          , selectInput(inputId = "region_sel"
-                                                , label = "Regions (with at least 1 case):"
-                                                    , list(
-                                                    "Auvergne-Rhone-Alpes"
-                                                    ,"Bourgogne-Franche-Comte"
-                                                    ,"Bretagne"
-                                                    ,"Centre-Val de Loire"
-                                                    ,"Corse"
-                                                    ,"Grand Est"
-                                                    ,"Guadeloupe"
-                                                    ,"Guyane"
-                                                    ,"Hauts-de-France"
-                                                    ,"Ile-de-France"
-                                                    ,"La Reunion"
-                                                    ,"Martinique"
-                                                    ,"Normandie"
-                                                    ,"Nouvelle-Aquitaine"
-                                                    ,"Occitanie"
-                                                    ,"Pays de la Loire"
-                                                    ,"Provence-Alpes-Cote d'Azur"
-                                                        )
-                                                , selected = c("Grand Est", "Ile-de-France", "Nouvelle-Aquitaine", "Occitanie"
-                                                    )
-                                                , multiple = TRUE
-                                                )
-                                                )
-                        , strong("Plot options:")
-                        , em("For curves (multiple selections allowed)")
-                                    , checkboxInput(inputId="log_fr"
-                                      , label = "Plot y axis on log scale", value = FALSE)
-                                    , checkboxInput(inputId="percapita_fr",
-                                      label = "Correct for population size", value = FALSE)
-                       , checkboxInput(inputId="dailyscale_fr",
-                                      label = "Plot daily breaks on x axis", value = FALSE)
-                       , checkboxInput(inputId="sync_fr",
-                                      label = "Synchroniser les epidemies departementales/regionales (nombre minimal de cas/morts pour definir le debut)
-                                      \n (si ne fonctionne pas : augmenter de 10 a 100 la valeur minimale ci-dessous)"
-                                      , value = FALSE)
-                       , numericInput(inputId = "num.min.fr"
-                                     , label = ""
-                                     , value = 10
-                                     )
-                       , checkboxInput(inputId="xyplot_fr"
-                                     , label = "XY-plot (e.g. regions en tension)"
-                                     , value = FALSE
-                                     )
                         , hr(style="border-color: black")
-                        , checkboxInput(inputId="R0_fr",
-                                      label = "Calcul du R0 en fenetres glissantes (soyez patients svp, cela prend jusqu'à quelques minutes)"
-                                      #(choose the computing window in days)
-                                      , value = FALSE)
+                         , switchInput(
+                                inputId = "type_analyse"
+                                , label = "Type d'analyse"
+                                , labelWidth = "50px"
+                                , offLabel = "Visualisation"
+                                , onLabel = "Calculs"
+                                )
+                      , column(5
+                         , dropdownButton(
+                           tags$h3("Visualisation")
+                           , selectInput(inputId = 'type_viz'
+                                          , label = 'Type de representation de donnees brutes'
+                                          , choices = c("Courbe" = "courbe_fr"
+                                          , "XYplot" = "xyplot_fr"
+                                          , "heatmap" = "heatmap_fr"
+                                          , "carte" = "carte_fr"
+                                          )
+                                          , selected = "courbe_fr"
+                                          )
+                           , conditionalPanel(
+                                         condition = "input.type_viz == 'courbe_fr'"
+                                                    , selectInput(inputId = 'courbe_fr_data', label = 'Donnee a representer'
+                                                                   , choices = c(
+                                                                      "Tests positifs" = "pos"
+                                                                      , "Tests negatifs" = "neg"
+                                                                     , "Incidence (tests positifs/total)" = "incid"
+                                                                      , "Hospitalises" = "hosp"
+                                                                      , "Saturation Hospitalisation" = 'hosp_sat'
+                                                                      , "Reanimation" = "rea"
+                                                                      , "Saturation Reanimation" = 'rea_sat'
+                                                                      , "Sorties" = "rad"
+                                                                      , "Decedes" = "dc"
+                                                                      , "Grouper les 4 categories (histogramme)" = "all"
+                                                                   )
+                                                                   , selected = "rea"
+                                                                   )
+                                                    )
+                           , conditionalPanel(
+                                         condition = "input.type_viz == 'xyplot_fr'"
+                                                    , selectInput(inputId = 'xyplot_fr_data_x', label = 'Donnee en x'
+                                                                   , choices = c(
+                                                                      "Tests positifs" = "pos"
+                                                                  #    , "Tests negatifs" = "neg"
+                                                                      , "Incidence (tests positifs/total)" = "incid"
+                                                                      , "Incidence a J-7 (moyenne une semaine)" = "J-7"
+                                                                      , "Incidence a J-14 (moyenne une semaine)" = "J-14"
+                                                                      , "Hospitalises" = "hosp"
+                                                                  #    , "Saturation Hospitalisation" = 'hosp_sat'
+                                                                      , "Reanimation" = "rea"
+                                                                  #    , "Saturation Reanimation" = 'rea_sat'
+                                                                      , "Sorties" = "rad"
+                                                                      , "Decedes" = "dc"
+                                                                  #    , "Lits d'hostpitalisation" = "sc"
+                                                                  #    , "Lits de soins instensifs" = "si"
+                                                                  #    , "Lits de reanimation" = "sr"
+                                                                  #     , "Grouper les 4 categories (histogramme)" = "all"
+                                                                   )
+                                                                   , selected = "J-14"
+                                                                   )
+                                                    , selectInput(inputId = 'xyplot_fr_data_y', label = 'Donnee en y'
+                                                                   , choices = c(
+                                                                   "Tests positifs" = "pos"
+                                                               #    , "Tests negatifs" = "neg"
+                                                                   , "Incidence (tests positifs/total)" = "incid"
+                                                                   , "Incidence a J-7 (moyenne une semaine)" = "J-7"
+                                                                   , "Incidence a J-14 (moyenne une semaine)" = "J-14"
+                                                                   , "Hospitalises" = "hosp"
+                                                               #    , "Saturation Hospitalisation" = 'hosp_sat'
+                                                                   , "Reanimation" = "rea"
+                                                               #    , "Saturation Reanimation" = 'rea_sat'
+                                                                   , "Sorties" = "rad"
+                                                                   , "Decedes" = "dc"
+                                                               #    , "Lits d'hostpitalisation" = "sc"
+                                                               #    , "Lits de soins instensifs" = "si"
+                                                               #    , "Lits de reanimation" = "sr"
+                                                               #     , "Grouper les 4 categories (histogramme)" = "all"
+                                                                   )
+                                                                   , selected = "rea"
+                                                                   )
+
+                                                    , selectInput(inputId = 'xyplot_fr_data_z', label = 'Taille des points'
+                                                                                  , choices = c(
+                                                                                  #    , "Tests negatifs" = "neg"
+                                                                                       "Incidence (tests positifs/total)" = "incid"
+                                                                                      , "Incidence a J-7 (moyenne une semaine)" = "J-7"
+                                                                                      , "Incidence a J-14 (moyenne une semaine)" = "J-14"
+                                                                                      , "Hospitalises" = "hosp"
+                                                                                  #    , "Saturation Hospitalisation" = 'hosp_sat'
+                                                                                      , "Reanimation" = "rea"
+                                                                                  #    , "Saturation Reanimation" = 'rea_sat'
+                                                                                      , "Sorties" = "rad"
+                                                                                      , "Decedes" = "dc"
+                                                                                      , "Lits d'hostpitalisation" = "sc"
+                                                                                      , "Lits de soins instensifs" = "si"
+                                                                                      , "Lits de reanimation" = "sr"
+                                                                                  #     , "Grouper les 4 categories (histogramme)" = "all"
+                                                                                  )
+                                                                                  , selected = "sr"
+                                                                                  )
+
+                                                    )
+                           , circle = TRUE, status = "danger", icon = icon("drafting-compass"), width = "300px",
+                           tooltip = tooltipOptions(title = "Visualisation")
+                         )
+                         )
+                      , column(5
+                         , dropdownButton(
+                           tags$h3("Calculs")
+                           , selectInput(inputId = 'type_comp'
+                                          , label = 'Type de calculs'
+                                          , choices = c("Selectionnez un type de calcul" = "blabla"
+                                          , "Calcul du R0 (par fenetres glissantes)" = "R0_fr"
+                                          , "Calculs des donnees " = "xyplot_comp"
+                                          , "carte" = "carte_fr"
+                                          )
+                                          , selected = "blabla"
+                                          )
+                           , conditionalPanel(
+                                         condition = "input.type_comp == 'R0_fr'"
+                                                    , selectInput(inputId = 'xcol', label = "Variable utilisee (pour plus de visibilite, cochez l'echelle logarithmique AVANT)"
+                                                                   , choices = c(
+                                                                      "Tests positifs" = "pos"
+                                #                                      , "Tests negatifs" = "neg"
+                                #                                      , "Incidence (tests positifs/total)" = "incid"
+                                                                      , "Hospitalises" = "hosp"
+                                #                                      , "Saturation Hospitalisation" = 'hosp_sat'
+                                                                      , "Reanimation" = "rea"
+                                #                                      , "Saturation Reanimation" = 'rea_sat'
+                                #                                      , "Sorties" = "rad"
+                                                                      , "Decedes" = "dc"
+                                #                                      , "Grouper les 4 categories (histogramme)" = "all"
+                                                                   )
+                                                                   , selected = "rea"
+                                                                   )
+                                                    )
+                           , conditionalPanel(
+                                         condition = "input.type_comp == 'xyplot_comp'"
+                                                    , selectInput(inputId = 'ycol', label = 'Variable en Y'
+                                                                   , choices = c(
+                                                                      "Tests positifs" = "pos"
+                                    #                                  , "Tests negatifs" = "neg"
+                                                                      , "Incidence (tests positifs/total)" = "incid"
+                                                                      , "Hospitalises" = "hosp"
+                                                                      , "Saturation Hospitalisation" = 'hosp_sat'
+                                                                      , "Reanimation" = "rea"
+                                                                      , "Saturation Reanimation" = 'rea_sat'
+                                                                      , "Sorties" = "rad"
+                                                                      , "Decedes" = "dc"
+                                                                      , "Grouper les 4 categories (histogramme)" = "all"
+                                                                   )
+                                                                   , selected = "rea"
+                                                                   )
+                                                    , selectInput(inputId = 'xcol', label = 'Variable en x'
+                                                                   , choices = c(
+                                                                      "Tests positifs" = "pos"
+                                                                      , "Tests negatifs" = "neg"
+                                                                      , "Incidence (tests positifs/total)" = "incid"
+                                                                      , "Hospitalises" = "hosp"
+                                                                      , "Saturation Hospitalisation" = 'hosp_sat'
+                                                                      , "Reanimation" = "rea"
+                                                                      , "Saturation Reanimation" = 'rea_sat'
+                                                                      , "Sorties" = "rad"
+                                                                      , "Decedes" = "dc"
+                                                                      , "Grouper les 4 categories (histogramme)" = "all"
+                                                                   )
+                                                                   , selected = "rea"
+                                                                   )
+
+                                                    )
+
+
+                           , circle = TRUE, status = "danger", icon = icon("square-root-alt"), width = "300px",
+                           tooltip = tooltipOptions(title = "Calculs")
+                           )
+                         )
+
+#                        , radioButtons(inputId = "type"
+#                                    , label = "Type de graphe"
+#                                    , choices = c("Courbe" = "courbe_fr"
+#                                    , "XYplot" = "xyplot_fr"
+#                                    )
+#                                    , selected = "courbe_fr"
+#                                    , inline = TRUE
+#                                    )
+#                        , conditionalPanel(
+#                                    condition = "input.type == 'courbe_fr'"
+#                                    , radioButtons(inputId = "data_column_fr"
+#                                     , label = "Donnees a montrer :"
+#                                     , choices = c(
+#                                        "Tests positifs" = "pos"
+#                                        , "Tests negatifs" = "neg"
+#                                        , "Incidence (tests positifs/total)" = "incid"
+#                                        , "Hospitalises" = "hosp"
+#                                        , "Saturation Hospitalisation" = 'hosp_sat'
+#                                        , "Reanimation" = "rea"
+#                                        , "Saturation Reanimation" = 'rea_sat'
+#                                        , "Sorties" = "rad"
+#                                        , "Decedes" = "dc"
+#                                        , "Grouper les 4 categories (histogramme)" = "all"
+#                                     )
+#                                     , selected = "hosp"
+#                                     , inline = TRUE
+#                                     )
+#                                     )
+#                        , conditionalPanel(
+#                                      condition = "input.type == 'xyplot_fr'"
+#                                                 , radioButtons(inputId = "xyplot_fr"
+#                                                 , label = "Donnees a montrer :"
+#                                                 , choices = c(
+#                                                   "Reanimation" = "xyplot_rea_fr", "Hospitalisation" = "xyplot_hosp_fr"
+#                                                  )
+#                                                 , selected = "xyplot_rea_fr"
+#                                                 , inline = TRUE
+#                                                 )
+#                                            )
+
+                        , hr(style="border-color: black")
+#                        , strong("Options graphiques:")
+                        , h3("Options graphiques:")
+                        , em("Pour les courbes (selections multiples possibles)")
+                        , conditionalPanel(
+                            condition = "input.type_analyse == FALSE"
+                            , numericInput(inputId = "linewidth_fr"
+                                , label = "Epaisseur des courbes"
+                                , value = 3
+                                )
+                            , checkboxInput(inputId="smoothed_fr"
+                                , label = "Courbe lissee", value = FALSE
+                                )
+
+                            , checkboxInput(inputId="log_fr"
+                                , label = "Representer l'axe des Y en echelle logarithmique", value = FALSE)
+                                , checkboxInput(inputId="percapita_fr"
+                                , label = "Normaliser en fonction de la taille de la population", value = FALSE
+                                )
+                           , checkboxInput(inputId="dailyscale_fr"
+                                , label = "Representer les jours sur l'axe des X", value = FALSE
+                                )
+                           , checkboxInput(inputId="sync_fr"
+                                , label = "Synchroniser les epidemies departementales/regionales (nombre minimal de cas/morts pour definir le debut)
+                                          \n (si ne fonctionne pas : augmenter de 10 a 100 la valeur minimale ci-dessous)"
+                                , value = FALSE
+                                )
+                           , numericInput(inputId = "num.min.fr"
+                                , label = ""
+                                , value = 5
+                                )
+                              )
+
+                        , hr(style="border-color: black")
+                        , h3("Parametres du calcul du R0:")
                         , column(5
                              , numericInput(inputId = "SI.min.fr"
                                       , label = "SI minimal"
@@ -432,10 +722,11 @@ ui <- fluidPage(title = "COVID-19 Pandemics for the People"
                                       , value = 8
                                       )
                                  )
-                        , numericInput(inputId = "window.R0"
-                                      , label = ""
-                                      , value = 3
-                                      )
+  #                      , numericInput(inputId = "window.R0"
+  #                                    , label = ""
+  #                                    , value = 3
+  #                                    )
+
                         , hr(style="border-color: black")
                   #      , strong("Select Socio-Economic Variable to Compare")
                   #      , selectizeInput(inputId = "socialvar"
@@ -463,7 +754,7 @@ ui <- fluidPage(title = "COVID-19 Pandemics for the People"
                               #    , verbatimTextOutput("info")
                      )
                      , fluidRow(
-                       sliderInput(inputId="dates",
+                       sliderInput(inputId="dates.fr",
                                     label="Dates:",
                                     min = mindate,
                                     max = maxdate,
@@ -510,7 +801,13 @@ server <- function(input, output, session) {
 
   output$worldplot <- renderPlot({
 
-#      dates_range <- seq(input$dates[1], input$dates[2], by = "days")
+      #################
+      data_column <- input$data_column
+      #data_column <- input$curve_data
+
+      #################
+
+      dates_range <- seq(input$dates[1], input$dates[2], by = "days")
               if(input$echelle_world == "continent")
                   {
                   data_selected <- continents.df[(continents.df$location %in% input$continents_sel),]
@@ -523,7 +820,7 @@ server <- function(input, output, session) {
                   {
                   data_selected <- world.df
                   }
-
+      data_selected.def <- data_selected[data_selected$date %in% dates_range, ]
 
       if(input$map | input$xyplot){
         sPDF <- joinCountryData2Map(map.df.2
@@ -533,7 +830,7 @@ server <- function(input, output, session) {
         # op <- palette(c("green", "yellow", "orange", "red"))
         #
         if(input$socialvar == "NONE"){
-            var = input$data_column
+            var = data_column
             sPDF@data[["data_to_plot"]] <- sPDF@data[[var]]
             # sPDF@data[["data_to_plot"]] <- cut(sPDF@data[[var]]
             #    , breaks = 4
@@ -542,7 +839,7 @@ server <- function(input, output, session) {
             #  )
             # levels(sPDF@data[["data_to_plot"]]) <- c("low","med", "high", "vhigh")
             } else {
-            var <- input$data_column
+            var <- data_column
             social.var <- input$socialvar
             sPDF@data[["data_to_plot"]] <- sPDF@data[[var]]/sPDF@data[[social.var]]
             # sPDF@data[["data_to_plot"]] <- cut(sPDF@data[[var]]/sPDF@data[[social.var]]
@@ -560,41 +857,55 @@ server <- function(input, output, session) {
             }
 
     if(input$R0){
-      #  COLS <- c(which(names(covdat) %in% c("date", "location", input$data_column)))
+      #  COLS <- c(which(names(covdat) %in% c("date", "location", data_column)))
       #  DAT.0 = covdat[covdat$location %in% input$countries_sel, COLS]
         #DAT.0 = covdat[covdat$location %in% input$countries_sel, c("date", "location", "new_deaths")]
 
+      #  data_selected.def <- data_selected
 
-        eval(parse(text = paste("DAT.0 = data_selected[, c('date', 'location', '", input$data_column, "')]", sep = "")))
+#### for testing purpose...
+#### input <- list() ; input$SI.min = 4 ; input$SI.max = 8 ; input$num.min = 10 ; data_column = "new_deaths" ; input$countries_sel = c("Germany", "France", "Denmark", "Spain", "Italy",  "Sweden", "United States")
+#### data_selected.def <- covdat[(covdat$location %in% input$countries_sel),]
+        eval(parse(text = paste("DAT.0 = na.omit(data_selected.def[, c('date', 'location', '", data_column, "')])", sep = "")))
 
 
-  #      if(input$data_column == "new_cases"){
+  #      if(data_column == "new_cases"){
   #          DAT.0 = data_selected[, c(2, 3, 4)]
-  #      } else if(input$data_column == "new_deaths") {
+  #      } else if(data_column == "new_deaths") {
   #          DAT.0 = data_selected[, c(2, 3, 5)]
   #      } else {stop(safeError(("Incompatible Data to show / plot option combination")))}
         #
         names(DAT.0) <- c("date", "location", "data")
+        DAT.0[DAT.0$data < 0, "data"] <- 0  #####   forced by Italy, Spain... data with "negative deaths"
+        #
         RES <- list()
         #
-        config <- make_config(list(mean_si = (mean(c(input$SI.min, input$SI.max))), std_mean_si = 1,
-                                   min_mean_si = input$SI.min, max_mean_si = input$SI.max,
-                                   std_si = 1.5, std_std_si = 0.5,
-                                   min_std_si = 0.5, max_std_si = 2.5))
+        config <- make_config(list(mean_si = (mean(c(input$SI.min, input$SI.max)))
+                                  , std_mean_si = 1
+                                  , min_mean_si = input$SI.min
+                                  , max_mean_si = input$SI.max
+                                  , std_si = 1.5, std_std_si = 0.5
+                                  , min_std_si = 0.5, max_std_si = 2.5
+                                   )
+                              )
         #
         #window = input$window.R0
         #
         for(c in unique(DAT.0$location)){
-          DAT.1 <- DAT.0[DAT.0$location == c  & (DAT.0$data >= input$num.min), ]
+          after <- which(DAT.0[DAT.0$location == c, "data"] >= input$num.min)
+          DAT.1 <- DAT.0[DAT.0$location == c, ][-c(1:after[1]), ]
+    #      DAT.1 <- DAT.0[DAT.0$location == c  & (DAT.0$data >= input$num.min), ]
           rownames(DAT.1) <- DAT.1$date
-          DAT.2 <- DAT.1[, -c(1, 2)]
-          es_uncertain_si <- estimate_R(DAT.2,
-                                         method = "uncertain_si",
-                                         config = config)
+          DAT.1 <- DAT.1[, -c(1, 2)]
+          es_uncertain_si <- estimate_R(DAT.1
+                                         , method = "uncertain_si"
+                                         , config = config
+                                         )
           #
-          max.length <- max(table(DAT.0[DAT.0$data > input$num.min, c("location")]))
+          # max.length <- max(table(DAT.0[DAT.0$data >= input$num.min, c("location")]))
           df <- rbind(do.call("rbind"
-                                          , replicate(n = (max.length - dim(DAT.1)[1])
+                                    #      , replicate(n = (max.length - length(as.matrix(DAT.1)))
+                                          , replicate(n = (after[1] + 1)
                                                       , rep(c(NA), times = dim(es_uncertain_si$R)[2])
                                           , simplify = FALSE)
                                           )
@@ -629,10 +940,10 @@ server <- function(input, output, session) {
           				L <- dim(data_selected.sync[data_selected.sync$location == c, ])[1]
           				data_selected.sync[data_selected.sync$location == c, "J"] <- seq(length = L)
                   }
-          dates_range <- seq(input$dates[1], input$dates[2], by = "days")
+  #        dates_range <- seq(input$dates[1], input$dates[2], by = "days")
           data_selected.def <- data_selected.sync[data_selected.sync$date %in% dates_range, ]
         } else {
-          dates_range <- seq(input$dates[1], input$dates[2], by = "days")
+  #        dates_range <- seq(input$dates[1], input$dates[2], by = "days")
           data_selected.def <- data_selected[data_selected$date %in% dates_range, ]
           }
 
@@ -650,28 +961,28 @@ server <- function(input, output, session) {
     if(input$sync){
     if(input$percapita){
 #    myplot <- myplot + labs(x = "Date", y = "Number per capita")
-    if(input$data_column == "total_cases"){
+    if(data_column == "total_cases"){
       DF <- data_selected.def[, c("date", "total_cases_percapita", "location")]
       names(DF) <- c("x", "y", "location")
       myplot <- ggplot(DF, aes(x, y, colour = location))+
                 ggtitle("Number of Confirmed Cases Per Capita throughout time"
                 , subtitle = "the raw number is divided by the country population")
       }
-    else if(input$data_column == "new_cases"){
+    else if(data_column == "new_cases"){
     DF <- data_selected.def[, c("date", "new_cases_percapita", "location")]
     names(DF) <- c("x", "y", "location")
     myplot <- ggplot(DF, aes(x, y, colour = location))+
               ggtitle("Number of Daily New Confirmed Cases Per Capita"
               , subtitle = "the raw number is divided by the country population")
       }
-    else if(input$data_column == "total_deaths"){
+    else if(data_column == "total_deaths"){
     DF <- data_selected.def[, c("date", "total_deaths_percapita", "location")]
     names(DF) <- c("x", "y", "location")
     myplot <- ggplot(DF, aes(x, y, colour = location))+
               ggtitle("Number of Deaths Per Capita throughout time"
               , subtitle = "the raw number is divided by the country population")
     }
-    else if(input$data_column == "new_deaths"){
+    else if(data_column == "new_deaths"){
     DF <- data_selected.def[, c("date", "new_deaths_percapita", "location")]
     names(DF) <- c("x", "y", "location")
     myplot <- ggplot(DF, aes(x, y, colour = location))+
@@ -681,28 +992,28 @@ server <- function(input, output, session) {
     }  else {
 
     myplot <- myplot + labs(x = "Date", y = "Raw Number")
-    if(input$data_column == "total_cases"){
+    if(data_column == "total_cases"){
       DF <- data_selected.def[, c("date", "total_cases", "location")]
       names(DF) <- c("x", "y", "location")
       myplot <- ggplot(DF, aes(x, y, colour = location))+
                 ggtitle("Number of Confirmed Cases throughout time"
                 )
                 }
-    else if(input$data_column == "new_cases"){
+    else if(data_column == "new_cases"){
     DF <- data_selected.def[, c("date", "new_cases", "location")]
     names(DF) <- c("x", "y", "location")
     myplot <- ggplot(DF, aes(x, y, colour = location))+
               ggtitle("Number of Daily New Confirmed Cases"
               )
               }
-    else if(input$data_column == "total_deaths"){
+    else if(data_column == "total_deaths"){
     DF <- data_selected.def[, c("date", "total_deaths", "location")]
     names(DF) <- c("x", "y", "location")
     myplot <- ggplot(DF, aes(x, y, colour = location))+
               ggtitle("Number of Deaths throughout time"
               )
               }
-    else if(input$data_column == "new_deaths"){
+    else if(data_column == "new_deaths"){
     DF <- data_selected.def[, c("date", "new_deaths_percapita", "location")]
     names(DF) <- c("x", "y", "location")
     myplot <- ggplot(DF, aes(x, y, colour = location))+
@@ -711,44 +1022,64 @@ server <- function(input, output, session) {
               }
             }
     } else if(input$R0){
-        myplot <- ggplot(data = RES, aes(x = J, y = R0_point, colour = location)) +
-        geom_line(size = 1)+
-        geom_ribbon(aes(ymin=R0_low, ymax=R0_high, colour = location), linetype=2, alpha=0.1)+
-        xlim(0, NA)+
-        ylim(-1, NA)+
-        geom_hline(
-              yintercept = 1, linetype = 5, colour = "black",
-              )+
-        geom_text(aes(min(J), 1, label = "R0 = 1", vjust = -1), colour = "black")+
-        labs(x = "Time in days (from past to present)", y = "Basic Reproduction Number (R) estimates")+
-        xlim(-length(unique(RES$J)), 0)+
-        theme_minimal()
-      } else {
+              #      if( == "rea"){
+              #                 EST <- "'patients en reanimation pour COVID'"
+              #                 }
+              #      if(input$xcol == "hosp"){
+              #                 EST <- "'patients hospitalises pour COVID'"
+              #                 }
+              #      if(input$xcol == "pos"){
+              #                 EST <- "'nombre de tests positifs au COVID'"
+              #                 }
+              #      if(input$xcol == "dc"){
+              #                 EST <- "'patients decedes du COVID'"
+              #                 }
+                     myplot <- ggplot(data = RES, aes(x = J, y = R0_point, colour = location))+
+                                 geom_line(size = 1)+
+                                 geom_ribbon(aes(ymin = R0_low, ymax = R0_high, colour = location), linetype = 2, alpha = 0.1)+
+                                 #xlim(0, NA)+
+                                 ylim(-1, NA)+
+                                 geom_hline(
+                                 yintercept = 1, linetype = 5, colour = "black",
+                                 )+
+                                 geom_text(aes(min(J), 1, label = "R0 = 1", vjust = -1), colour = "black")+
+                                 ggtitle("R0 estimate on sliding windows"
+                                 , subtitle = paste(
+                                                  "computing based on the indicator"
+                                  #                , EST
+                                                   , data_column
+                                                  )
+                                              )+
+                                 labs(x = "TIME (from past to today) in DAYS", y = "Estimate of the Basic Reproduction Number (R0)")+
+                                 xlim(-length(unique(RES$J)), 0)+
+                                 theme_minimal()
+
+                      } else {
 
     if(input$percapita){
       myplot <- myplot + labs(x = "Date", y = "Number per capita")
-      if(input$data_column == "total_cases"){
+      if(data_column == "total_cases"){
         DF <- data_selected.def[, c("date", "total_cases_percapita", "location")]
         names(DF) <- c("x", "y", "location")
         myplot <- ggplot(DF, aes(x, y, colour = location))+
                         ggtitle("Number of Confirmed Cases per capita throughout time"
                                 , subtitle = "the raw number is divided by the country population")
                                 }
-        else if(input$data_column == "new_cases"){
+        else if(data_column == "new_cases"){
         DF <- data_selected.def[, c("date", "new_cases_percapita", "location")]
         names(DF) <- c("x", "y", "location")
         myplot <- ggplot(DF, aes(x, y, colour = location))+
                           ggtitle("Number of Daily New Confirmed Cases per capita"
                                   , subtitle = "the raw number is divided by the country population")
                                   }
-      else if(input$data_column == "total_deaths"){
+      else if(data_column == "total_deaths"){
         DF <- data_selected.def[, c("date", "total_deaths_percapita", "location")]
         names(DF) <- c("x", "y", "location")
         myplot <- ggplot(DF, aes(x, y, colour = location))+
                           ggtitle("Number of Deaths Per Capita throughout time"
                                   , subtitle = "the raw number is divided by the country population")
                                   }
-      else if(input$data_column == "new_deaths"){
+      else if(data_column == "new_deaths"){
         DF <- data_selected.def[, c("date", "new_deaths_percapita", "location")]
         names(DF) <- c("x", "y", "location")
         myplot <- ggplot(DF, aes(x, y, colour = location))+
@@ -757,25 +1088,25 @@ server <- function(input, output, session) {
                                   }
         } else {
           myplot <- myplot + labs(x = "Date", y = "Raw Number")
-          if(input$data_column == "total_cases"){
+          if(data_column == "total_cases"){
             DF <- data_selected.def[, c("date", "total_cases", "location")]
             names(DF) <- c("x", "y", "location")
             myplot <- ggplot(DF, aes(x, y, colour = location))+
                               ggtitle("Number of Confirmed Cases throughout time")
                               }
-          else if(input$data_column == "new_cases"){
+          else if(data_column == "new_cases"){
             DF <- data_selected.def[, c("date", "new_cases", "location")]
             names(DF) <- c("x", "y", "location")
             myplot <- ggplot(DF, aes(x, y, colour = location))+
                               ggtitle("Number of Daily New Confirmed Cases")
                               }
-          else if(input$data_column == "total_deaths"){
+          else if(data_column == "total_deaths"){
             DF <- data_selected.def[, c("date", "total_deaths", "location")]
             names(DF) <- c("x", "y", "location")
             myplot <- ggplot(DF, aes(x, y, colour = location))+
                               ggtitle("Number of Deaths throughout time")
                               }
-          else if(input$data_column == "new_deaths"){
+          else if(data_column == "new_deaths"){
             DF <- data_selected.def[, c("date", "new_deaths", "location")]
             names(DF) <- c("x", "y", "location")
             myplot <- ggplot(DF, aes(x, y, colour = location))+
@@ -785,7 +1116,7 @@ server <- function(input, output, session) {
       }
 
 if(input$map){
-  if(input$data_column == "total_cases" | input$data_column == "total_deaths"){
+  if(data_column == "total_cases" | data_column == "total_deaths"){
       colourPalette <- rev(brewer.pal(10,'RdYlGn'))
       if(input$socialvar == "NONE"){
         myplot <- mapCountryData( sPDF
@@ -812,7 +1143,7 @@ if(input$map){
 }
 
   if(input$xyplot){
-    if(input$data_column == "total_cases" | input$data_column == "total_deaths"){
+    if(data_column == "total_cases" | data_column == "total_deaths"){
       #var="total_cases"; socialvar = "Population in the largest city (% of urban population)" ;
       xy.df <- map.df.2[, names(map.df.2) %in% c(var, social.var, "location", "continent")]
       names(xy.df) <- c("continent", "location", "y", "x")
@@ -870,97 +1201,105 @@ if(input$map){
 
 output$franceplot <- renderPlot({
 #output$franceplot <- renderGirafe({
+dates_range.fr <- seq(input$dates.fr[1], input$dates.fr[2], by = "days")
 
       if(input$echelle == "departement"){
-  #      dates_range <- seq(input$dates[1], input$dates[2], by = "days")
         data_selected <- france.df[(france.df$dep %in% input$dep_sel) & (france.df$sexe == input$sexe),]
         data_selected$location <- data_selected$dep
       } else {
         data_selected <- regions.df[(regions.df$Region %in% input$region_sel) & (regions.df$Sexe == input$sexe),]
         data_selected$location <- data_selected$Region
       }
+  data_selected.def <- data_selected[data_selected$jour %in% dates_range.fr, ]
+  #data_selected.def <- data_selected.sync[data_selected.sync$date %in% dates_range, ]
 
-      if(input$R0_fr){
-        #  COLS <- c(which(names(covdat) %in% c("date", "location", input$data_column)))
-        #  DAT.0 = covdat[covdat$location %in% input$countries_sel, COLS]
-          #DAT.0 = covdat[covdat$location %in% input$countries_sel, c("date", "location", "new_deaths")]
+##
+if(input$type_analyse == TRUE){
+          if(input$type_comp == "R0_fr"){
 
-          DAT.0 <- data_selected[, c("jour", "location", input$data_column_fr)]
-          names(DAT.0) <- c("date", "location", "data")
-          RES <- list()
-          #
-          config <- make_config(list(mean_si = (mean(c(input$SI.min.fr, input$SI.max.fr))), std_mean_si = 1,
-                                     min_mean_si = input$SI.min.fr, max_mean_si = input$SI.max.fr,
-                                     std_si = 1.5, std_std_si = 0.5,
-                                     min_std_si = 0.5, max_std_si = 2.5))
-          #
-          #window = input$window.R0_fr
-          #
-          for(c in unique(DAT.0$location)){
-            DAT.1 <- DAT.0[DAT.0$location == c  & (DAT.0$data >= input$num.min.fr), ]
-            rownames(DAT.1) <- DAT.1$date
-            DAT.1 <- DAT.1[, -c(1, 2)]
-            es_uncertain_si <- estimate_R(DAT.1,
-                                           method = "uncertain_si",
-                                           config = config)
+          #### for testing purpose...
+          #### input <- list() ; input$SI.min = 4 ; input$SI.max = 8 ; input$num.min = 10 ; input$xcol = "hosp" ; input$region_sel = c("Occitanie", "Nouvelle-Aquitaine", "Auvergne-Rhone-Alpes") ; input$sexe = 0
+          #### data_selected.def <- regions.df[(regions.df$Region %in% input$region_sel & (regions.df$Sexe == input$sexe)),] ; data_selected.def$location <- data_selected.def$Region ; data_selected.def$location <- data_selected.def$Region
+          #### input$dates.fr = as.Date(c("2020-10-01", "2020-11-01")) ; dates_range.fr <- seq(input$dates.fr[1], input$dates.fr[2], by = "days") ; data_selected.def <- data_selected.def[data_selected.def$jour %in% dates_range.fr, ]
+
+
+
+            DAT.0 <- na.omit(data_selected.def[, c("jour", "location", input$xcol)])
+            names(DAT.0) <- c("date", "location", "data")
+    #        DAT.0[DAT.0$data < 0, "data"] <- 0  #####   forced by Italy, Spain... data with "negative deaths"
+            RES <- list()
             #
-            max.length <- max(table(DAT.0[DAT.0$data > input$num.min.fr, c("location")]))
-            df <- rbind(do.call("rbind"
-                                            , replicate(n = (max.length - length(DAT.1))
-                                                        , rep(c(NA), times = dim(es_uncertain_si$R)[2])
-                                            , simplify = FALSE)
-                                            )
-                                      , as.matrix(es_uncertain_si$R)
-                                      )
+            config <- make_config(list(mean_si = (mean(c(input$SI.min, input$SI.max)))
+                                      , std_mean_si = 1
+                                      , min_mean_si = input$SI.min
+                                      , max_mean_si = input$SI.max
+                                      , std_si = 1.5, std_std_si = 0.5
+                                      , min_std_si = 0.5, max_std_si = 2.5
+                                       )
+                                  )
+            #
+            #window = input$window.R0_fr
+            #
+            for(c in unique(DAT.0$location)){
+              after <- which(DAT.0[DAT.0$location == c, "data"] >= input$num.min)
+              DAT.1 <- DAT.0[DAT.0$location == c, ][-c(1:after[1]), ]
+          #    DAT.1 <- DAT.0[DAT.0$location == c  & (DAT.0$data >= input$num.min.fr), ]
+              rownames(DAT.1) <- DAT.1$date
+              DAT.1 <- DAT.1[, -c(1, 2)]
+              es_uncertain_si <- estimate_R(DAT.1
+                                             , method = "uncertain_si"
+                                             , config = config
+                                             )
+              #
+              max.length <- max(table(DAT.0[DAT.0$data >= input$num.min.fr, c("location")]))
+              df <- rbind(do.call("rbind"
+                                        #      , replicate(n = (max.length - length(as.matrix(DAT.1)))
+                                               , replicate(n = (after[1] + 1)
+                                                          , rep(c(NA), times = dim(es_uncertain_si$R)[2])
+                                              , simplify = FALSE)
+                                              )
+                                        , as.matrix(es_uncertain_si$R)
+                                        )
 
-            RES[[c]] <- data.frame("J" <- seq(dim(df)[1])
-            										, "BEGIN" = df[, "t_start"]
-            										, "END" = df[, "t_end"]
-                                , "R0_point" = df[, "Median(R)"]
-                                , "R0_low" = df[, "Quantile.0.05(R)"]
-                                , "R0_high" = df[, "Quantile.0.95(R)"]
-                                )
-                    #rownames(RES[[c]]) <- sort(unique(DAT.0$date))
-                              }
+              RES[[c]] <- data.frame("J" <- seq(dim(df)[1])
+                                  , "BEGIN" = df[, "t_start"]
+                                  , "END" = df[, "t_end"]
+                                  , "R0_point" = df[, "Median(R)"]
+                                  , "R0_low" = df[, "Quantile.0.05(R)"]
+                                  , "R0_high" = df[, "Quantile.0.95(R)"]
+                                  )
+                      #rownames(RES[[c]]) <- sort(unique(DAT.0$date))
+                                }
 
-      for(c in names(RES)){
-        RES[[c]]$location <- c
-      }
-      RES <- do.call("rbind", RES)
-      names(RES)[1] <- "J"
-      RES$J <- RES$J - length(unique(RES$J))  ##  reverse timescale
-    }
-
-
+        for(c in names(RES)){
+          RES[[c]]$location <- c
+        }
+        RES <- do.call("rbind", RES)
+        names(RES)[1] <- "J"
+        RES$J <- RES$J - length(unique(RES$J))  ##  reverse timescale
+          }
 
 
+          if(input$type_comp == "xyplot_comp"){}
+}
 
+################################################
       if(input$sync_fr){
-
-          before <- which(data_selected$hosp < input$num.min.fr)
-          data_selected.sync <- data_selected[-before, ]
+          before <- which(data_selected.def$location < input$num.min.fr)
+      #    before <- which(data_selected.def$hosp < input$num.min.fr)
+          data_selected.sync <- data_selected.def[-before, ]
           data_selected.sync$J <- 0
           for (c in unique(data_selected.sync$location)){
               L <- dim(data_selected.sync[data_selected.sync$location == c, ])[1]
               data_selected.sync[data_selected.sync$location == c, "J"] <- seq(length = L)
               }
-      #        dates_range <- seq(input$dates[1], input$dates[2], by = "days")
-      #        data_selected <- data_selected.sync[(data_selected.sync$location %in% input$countries_sel) & (data_selected.sync$date %in% dates_range),]
             data_selected.sync$jour <- data_selected.sync$J
-            data_selected <- data_selected.sync
-            } #else {
-      #      if(input$echelle == "departement"){
-      #          dates_range <- seq(input$dates[1], input$dates[2], by = "days")
-      #          data_selected <- france.df[(france.df$dep %in% input$dep_sel) & (france.df$sexe == input$sexe),]
-      #          data_selected$location <- data_selected$dep
-      #        } else {
-      #        }
-      #      }
+            data_selected.def <- data_selected.sync
+            }
+################################################
 
-
-      ######
     #  myplot <- ggplot(data_selected, aes(tooltip = location, data_id = location,)) +
-    myplot <- ggplot(data_selected) +
+    myplot <- ggplot(data_selected.def) +
             #scale_color_brewer(palette="Paired", name = "Country")
             scale_color_discrete(name = paste(input$echelle, ":")) +
             theme_linedraw(base_size = 15)
@@ -968,93 +1307,398 @@ output$franceplot <- renderPlot({
       #    dates_range <- seq(input$dates[1], input$dates[2], by = "days")
       #    covdat_selected <- covdat[(covdat$location %in% input$countries_sel) & (covdat$date %in% dates_range),]
 
+if(input$type_analyse == FALSE){
+    if(input$type_viz == ("courbe_fr")){
+      data_column_fr <- input$courbe_fr_data
+        if(data_column_fr == "all"){
+          data <- melt(data = data_selected.def, id.vars = c("location", "jour"), measure.vars = c("hosp", "rea", "rad", "dc"))
+          myplot <- ggplot(data, aes(fill = variable, y = value, x = jour))+
+                    geom_bar_interactive(position = "stack", stat = "identity")
+                    }
+              #################################################################
+              ###### MESURES INDEPENDANTES DE LA TAILLE DE LA POPULATION ######
+              #################################################################
+        if((data_column_fr == "hosp_sat") | (data_column_fr == "rea_sat") | (data_column_fr == "incid")) {
+          if(data_column_fr == "hosp_sat"){
+            DF <- data_selected.def[, c("jour", "hosp", "location")]
+            names(DF) <- c("x", "y", "location")
+            DF$y <- (data_selected$hosp/(data_selected$SC_CHR_2018 + data_selected$SC_AUTRES_2018))*100
+            ##  Polygone rouge au-dessus de 100%  ##
+            df_poly <- data.frame(x = as.Date(c(0, 0, Inf, Inf), origin = min(DF$x))
+                                        , y = c(100, Inf, Inf, 100)
+                                        )
 
-      if(input$data_column_fr =="all"){
-        data <- melt(data = data_selected, id.vars = c("location", "jour"), measure.vars = c("hosp", "rea", "rad", "dc"))
-        myplot <- ggplot(data, aes(fill = variable, y = value, x = jour))+
-                  geom_bar_interactive(position = "stack", stat = "identity")
-  #    if(input$sync){
-  #    if(input$percapita){
-      } else if(input$R0_fr){
-        myplot <- ggplot(data = RES, aes(x = J, y = R0_point, colour = location)) +
-        geom_line(size = 1)+
-        geom_ribbon(aes(ymin = R0_low, ymax = R0_high, colour = location), linetype = 2, alpha = 0.1)+
-        xlim(0, NA)+
-        ylim(-1, NA)+
-        geom_hline(
-              yintercept = 1, linetype = 5, colour = "black",
-              )+
-        geom_text(aes(min(J), 1, label = "R0 = 1", vjust = -1), colour = "black")+
-              labs(x = "Temps (du passe a aujourd'hui)", y = "Estimation du Nombre  Basique de Reproduction (R0)")+
-              xlim(-length(unique(RES$J)), 0)+
-              theme_minimal()
-
-
-        } else {
-      if(input$percapita_fr){
-        #myplot <- myplot + labs(x = "Date", y = "Number of cases")
-        if(input$data_column_fr == "hosp"){
-          myplot <- myplot+ geom_line_interactive(mapping = aes(x = jour, y = (hosp*10e5/PTOT), colour = location
-                          #    , tooltip = location, data_id = location
-                              ), size=1)+
-                            labs(x = "Date", y = "Patiens hospitalises / 100.000 habitants")
-                            }
-        else if(input$data_column_fr == "rea"){
-          myplot <- myplot + geom_line(mapping = aes(x = jour, y = rea*10e5/PTOT, colour = location), size=1)+
-                            labs(x = "Date", y = "Patiens en reanimation / 100.000 habitants")
-                            }
-        else if(input$data_column_fr == "rad"){
-          myplot <- myplot + geom_line(mapping = aes(x = jour, y = rad*10e5/PTOT, colour = location), size=1)+
-                            labs(x = "Date", y = "Patiens sortis / 100.000 habitants")
-                            }
-        else if(input$data_column_fr == "dc"){
-          myplot <- myplot + geom_line(mapping = aes(x = jour, y = dc*10e5/PTOT, colour = location), size=1)+
-                            labs(x = "Date", y = "Patiens decedes / 100.000 habitants")
-                            }
-          } else {
-            #myplot <- myplot + labs(x = "Date", y = "Number of cases")
-            if(input$data_column_fr == "hosp"){
-              myplot <- myplot+ geom_line(mapping = aes(x = jour, y = hosp, colour = location), size=1)+
-                                labs(x = "Date", y = "Patiens hospitalises")
-                        }
-            else if(input$data_column_fr == "hosp_sat"){
-            df_poly <- data.frame(x = as.Date(c(0, 0, Inf, Inf), origin = min(data_selected$jour))
-                                , y = c(1, Inf, Inf, 1)
-                                )
-              myplot <- myplot +
-                geom_line(mapping = aes(x = jour, y = hosp/(SC_CHR_2018 + SC_AUTRES_2018), colour = location), size=1)+
-                                labs(x = "Date", y = "Saturation en Hospitalisation")+
-                                geom_polygon(data = df_poly, aes(x, y), fill="red", alpha=0.2)+
-                                labs(title = "Saturation en Lits par les patients COVID"
-                                    , subtitle = "Zone Rouge : Departement/Region sature(e) (>1 = >100%)"
-                                    )
-                        }
-            else if(input$data_column_fr == "rea"){
-              myplot <- myplot + geom_line(mapping = aes(x = jour, y = rea, colour = location), size=1)+
-                                 labs(x = "Date", y = "Patiens en reanimation")
-                         }
-            else if(input$data_column_fr == "rea_sat"){
-            df_poly <- data.frame(x = as.Date(c(0, 0, Inf, Inf), origin = min(data_selected$jour))
-                                , y = c(1, Inf, Inf, 1)
-                                )
-              myplot <- myplot + geom_line(mapping = aes(x = jour, y = rea/(Rea_CHR_2018 + Rea_AUTRES_2018), colour = location), size=1)+
-                                  labs(x = "Date", y = "Saturation en reanimation")+
-                                  geom_polygon(data = df_poly, aes(x, y), fill="red", alpha=0.2)+
-                                  labs(title = "Saturation en Lits par les patients COVID"
-                                      , subtitle = "Zone Rouge : Departement/Region sature(e) (>1 = >100%)"
+                    myplot <- myplot +
+                                      labs(x = "Date", y = "Saturation en Hospitalisation (%)")+
+                                      geom_polygon(data = df_poly, aes(x, y), fill="red", alpha=0.2)+
+                                      labs(title = "Saturation en Lits par les patients COVID"
+                                          , subtitle = "Zone Rouge : Departement/Region sature(e) (>100%)"
+                                          )
+                              }
+          if(data_column_fr == "rea_sat"){
+            DF <- data_selected.def[, c("jour", "rea", "location")]
+            names(DF) <- c("x", "y", "location")
+            DF$y <- (data_selected$rea/(data_selected$Rea_CHR_2018 + data_selected$Rea_AUTRES_2018))*100
+            ##  Polygone rouge au-dessus de 100%  ##
+            df_poly <- data.frame(x = as.Date(c(0, 0, Inf, Inf), origin = min(DF$x))
+                                      , y = c(100, Inf, Inf, 100)
                                       )
-                         }
-            else if(input$data_column_fr == "rad"){
-              myplot <- myplot + geom_line(mapping = aes(x = jour, y = rad, colour = location), size=1)+
-                                 labs(x = "Date", y = "Patiens sortis")
-                         }
-            else if(input$data_column_fr == "dc"){
-              myplot <- myplot + geom_line(mapping = aes(x = jour, y = dc, colour = location), size=1)+
-                                 labs(x = "Date", y = "Patiens decedes")
-                         }
+
+                    myplot <- myplot +
+                                      labs(x = "Date", y = "Saturation en Hospitalisation")+
+                                      geom_polygon(data = df_poly, aes(x, y), fill="red", alpha=0.2)+
+                                      labs(title = "Saturation en Lits de Reanimation par les patients COVID"
+                                          , subtitle = "Zone Rouge : Departement/Region sature(e) (>100%)"
+                                          )
+                              }
+          if(data_column_fr == "incid"){
+            DF <- data_selected.def[, c("jour", "incid", "location", "PTOT")]
+            names(DF) <- c("x", "y", "location", "PTOT")
+                    myplot <- myplot+
+                                      labs(x = "Date", y = "incidence (%)")+
+                                      labs(title = "Incidence du COVID-19 mesure par les tests"
+                                            , subtitle = "(rapport Nb positifs/Nb total de tests ; mesure independante de la population)"
+                                            )
+                              }
+                              }
+        #################################################################
+        ###### MESURES DEPENDANTES DE LA TAILLE DE LA POPULATION ########
+        #################################################################
+        else {
+          if(input$percapita_fr){
+            if(data_column_fr == "pos"){
+  DF <- data_selected.def[, c("jour", "pos", "location", "PTOT")]
+  names(DF) <- c("x", "y", "location", "PTOT")
+  DF$y <- DF$y*10e5/DF$PTOT
+
+  myplot <- myplot+
+                labs(x = "Date", y = "Tests positifs / 100.000 habitants")+
+                labs(title = "Tests Positifs"
+                    , subtitle = "Donnees brutes (pour 100.000 habitants)"
+                    )
+                    }
+            if(data_column_fr == "neg"){
+  DF <- data_selected.def[, c("jour", "neg", "location", "PTOT")]
+  names(DF) <- c("x", "y", "location", "PTOT")
+  DF$y <- DF$y*10e5/DF$PTOT
+
+  myplot <- myplot+
+                labs(x = "Date", y = "Tests négatifs / 100.000 habitants")+
+                labs(title = "Tests Negatifs"
+                    , subtitle = "Donnees brutes (pour 100.000 habitants)"
+                    )
+                    }
+            if(data_column_fr == "hosp"){
+  DF <- data_selected.def[, c("jour", "hosp", "location", "PTOT")]
+  names(DF) <- c("x", "y", "location", "PTOT")
+  DF$y <- DF$y*10e5/DF$PTOT
+
+  myplot <- myplot+
+                labs(x = "Date", y = "Patiens hospitalises / 100.000 habitants")+
+                labs(title = "Nombre de Patients Hospitalises pour COVID-19"
+                      , subtitle = "Donnees brutes (pour 100.000 habitants)"
+                    )
+                        }
+            if(data_column_fr == "rea"){
+  DF <- data_selected.def[, c("jour", "rea", "location", "PTOT")]
+  names(DF) <- c("x", "y", "location", "PTOT")
+  DF$y <- DF$y*10e5/DF$PTOT
+
+  myplot <- myplot+
+              labs(x = "Date", y = "Patiens en reanimation / 100.000 habitants")+
+              labs(title = "Nombre de Patients en Reanimation pour COVID-19"
+                    , subtitle = "Donnees brutes (pour 100.000 habitants)"
+                  )
+                        }
+            if(data_column_fr == "rad"){
+              DF <- data_selected.def[, c("jour", "rad", "location", "PTOT")]
+              names(DF) <- c("x", "y", "location", "PTOT")
+              DF$y <- DF$y*10e5/DF$PTOT
+              myplot <- myplot+
+                labs(x = "Date", y = "Patiens sortis / 100.000 habitants")+
+                labs(title = "Nombre de Patients Retournes a domicile ('gueris')"
+                      , subtitle = "Donnees brutes (pour 100.000 habitants)"
+                  )
+                }
+            if(data_column_fr == "dc"){
+              DF <- data_selected.def[, c("jour", "dc", "location", "PTOT")]
+              names(DF) <- c("x", "y", "location", "PTOT")
+              DF$y <- DF$y*10e5/DF$PTOT
+              myplot <- myplot+
+                labs(x = "Date", y = "Patiens decedes / 100.000 habitants")+
+                labs(title = "Nombre de Patients decedes du COVID-19"
+                    , subtitle = "Donnees brutes (pour 100.000 habitants)"
+                        )
+                      }
+          } else {
+            if(data_column_fr == "pos"){
+              DF <- data_selected.def[, c("jour", "pos", "location", "PTOT")]
+              names(DF) <- c("x", "y", "location", "PTOT")
+              #DF$y <- DF$y*10e5/DF$PTOT
+
+              myplot <- myplot+
+                            labs(x = "Date", y = "Tests positifs / 100.000 habitants")+
+                            labs(title = "Tests Positifs"
+                                , subtitle = "Donnees brutes (pour 100.000 habitants)"
+                                )
+                                }
+            if(data_column_fr == "neg"){
+              DF <- data_selected.def[, c("jour", "neg", "location", "PTOT")]
+              names(DF) <- c("x", "y", "location", "PTOT")
+              #DF$y <- DF$y*10e5/DF$PTOT
+              myplot <- myplot+
+                            labs(x = "Date", y = "Tests négatifs / 100.000 habitants")+
+                            labs(title = "Tests Negatifs"
+                                , subtitle = "Donnees brutes (pour 100.000 habitants)"
+                                )
+                                }
+            if(data_column_fr == "hosp"){
+              DF <- data_selected.def[, c("jour", "hosp", "location", "PTOT")]
+              names(DF) <- c("x", "y", "location", "PTOT")
+              #DF$y <- DF$y*10e5/DF$PTOT
+              myplot <- myplot+
+                            labs(x = "Date", y = "Patiens hospitalises")+
+                            labs(title = "Nombre de Patients Hospitalises pour COVID-19"
+                                  , subtitle = "Donnees brutes"
+                                )
+                                    }
+            if(data_column_fr == "rea"){
+              DF <- data_selected.def[, c("jour", "rea", "location", "PTOT")]
+              names(DF) <- c("x", "y", "location", "PTOT")
+              #DF$y <- DF$y*10e5/DF$PTOT
+              myplot <- myplot+
+                          labs(x = "Date", y = "Patiens en reanimation")+
+                          labs(title = "Nombre de Patients en Reanimation pour COVID-19"
+                                , subtitle = "Donnees brutes"
+                              )
+                                    }
+            if(data_column_fr == "rad"){
+              DF <- data_selected.def[, c("jour", "rad", "location", "PTOT")]
+              names(DF) <- c("x", "y", "location", "PTOT")
+              #DF$y <- DF$y*10e5/DF$PTOT
+              myplot <- myplot+
+                          labs(x = "Date", y = "Patiens sortis")+
+                          labs(title = "Nombre de Patients Retournes a domicile ('gueris')"
+                                , subtitle = "Donnees brutes (pour 100.000 habitants)"
+                              )
+
+                                    }
+            if(data_column_fr == "dc"){
+              DF <- data_selected.def[, c("jour", "dc", "location", "PTOT")]
+              names(DF) <- c("x", "y", "location", "PTOT")
+              #DF$y <- DF$y*10e5/DF$PTOT
+              myplot <- myplot+
+                          labs(x = "Date", y = "Patiens decedes")+
+                          labs(title = "Nombre de Patients decedes du COVID-19"
+                                , subtitle = "Donnees brutes"
+                              )
+                            }
                   }
             }
-            if(input$map.fr){
+        }
+if(input$type_viz == "xyplot_fr"){
+        if(input$xyplot_fr_data_x == "rea" & input$xyplot_fr_data_y == "sr"){
+              if(input$echelle == "departement"){
+                      DF <- aggregate(france.df[france.df$sexe == input$sexe, c("rea", "Rea_CHR_2018", "Rea_AUTRES_2018")]
+                          , by = as.list(france.df[france.df$sexe == input$sexe, c("DEP" = "dep", "REGION" = "region_name")])
+                          , FUN = last
+                          )
+                      df_poly <- data.frame(x = c(-Inf, Inf, Inf)
+                              , y = c(-Inf, Inf, -Inf)
+                              )
+                      MAX <- max(DF$rea, DF$Rea_CHR_2018+DF$Rea_AUTRES_2018)
+                      myplot <- ggplot(DF, aes(rea, Rea_CHR_2018+Rea_AUTRES_2018))+
+                            #geom_abline(slope = mean(DF$ratio)) +
+                            #geom_abline(slope = 1) +
+                            coord_fixed()+
+                            geom_polygon(data=df_poly, aes(x, y), fill="red", alpha=0.2) +
+                            xlim(0, MAX)+ ylim(0, MAX)+
+                            xlab("Patients COVID")+ ylab("Capacite Totale en Lits")+
+                            labs(title = "Saturation en Lits de Reanimation par les patients COVID"
+                                , subtitle = "Zone Rouge : Departements satures"
+                                )+
+                            geom_point(aes(size = rea, colour = region_name), show.legend = FALSE)+
+                            #geom_text_repel(aes(label = paste(Region, "(", ratio.pct, "%)")), size=3)+
+                            geom_text_repel(aes(label = dep), size=3)+
+                            theme_minimal()
+                  } else {
+                      DF <- aggregate(france.df[france.df$sexe == input$sexe, c("rea", "Rea_CHR_2018", "Rea_AUTRES_2018")]
+                        , by = as.list(france.df[france.df$sexe == input$sexe, c("DEP" = "dep", "REGION" = "region_name")])
+                        , FUN = last
+                        )
+                        DF <- aggregate(DF[, -c(1:2)], by = list(Region = DF$region_name), FUN = sum)
+                        df_poly <- data.frame(x = c(-Inf, Inf, Inf)
+                              , y = c(-Inf, Inf, -Inf)
+                              )
+          MAX <- max(DF$rea, DF$Rea_CHR_2018+DF$Rea_AUTRES_2018)
+          myplot <- ggplot(DF, aes(rea, Rea_CHR_2018+Rea_AUTRES_2018))+
+                          #geom_abline(slope = mean(DF$ratio)) +
+                          #geom_abline(slope = 1) +
+                          coord_fixed()+
+                          geom_polygon(data=df_poly, aes(x, y), fill="red", alpha=0.2) +
+                          xlim(0, MAX)+ ylim(0, MAX)+
+                          xlab("Patients COVID")+ ylab("Capacite Totale")+
+                          labs(title = "Saturation en Lits de Reanimation par les patients COVID"
+                              , subtitle = "Zone Rouge : Regions saturees"
+                              )+
+                          geom_point(aes(size = rea, colour = Region), show.legend = FALSE)+
+                          #geom_text_repel(aes(label = paste(Region, "(", ratio.pct, "%)")), size=3)+
+                          geom_text_repel(aes(label = Region), size=3)+
+                          theme_minimal()
+                          }
+            }
+    if(input$xyplot_fr_data_x == "hosp" & input$xyplot_fr_data_y == "sc") {
+            if(input$echelle == "departement"){
+                    DF <- aggregate(france.df[france.df$sexe == input$sexe, c("hosp", "SI_CHR_2018", "SI_AUTRES_2018", "SC_CHR_2018", "SC_AUTRES_2018")]
+                              , by = as.list(france.df[france.df$sexe == input$sexe, c("DEP" = "dep", "REGION" = "region_name")])
+                              , FUN = last
+                              )
+                    df_poly <- data.frame(x = c(-Inf, Inf, Inf)
+                                  , y = c(-Inf, Inf, -Inf)
+                                  )
+                    MAX <- max(DF$hosp, DF$SI_CHR_2018+DF$SI_AUTRES_2018)
+                    myplot <- ggplot(DF, aes(hosp, SI_CHR_2018+SI_AUTRES_2018))+
+                                #geom_abline(slope = mean(DF$ratio)) +
+                                #geom_abline(slope = 1) +
+                                coord_fixed()+
+                                geom_polygon(data=df_poly, aes(x, y), fill="red", alpha=0.2) +
+                                xlim(0, MAX)+ ylim(0, MAX)+
+                                xlab("Patients COVID")+ ylab("Capacite Totale en Lits")+
+                                labs(title = "Saturation en Lits d'Hospitalisation par les patients COVID"
+                                    , subtitle = "Zone Rouge : Departements satures"
+                                    )+
+                                geom_point(aes(size = hosp, colour = region_name), show.legend = FALSE)+
+                                #geom_text_repel(aes(label = paste(Region, "(", ratio.pct, "%)")), size=3)+
+                                geom_text_repel(aes(label = dep), size=3)+
+                                theme_minimal()
+            } else {
+                    DF <- aggregate(france.df[france.df$sexe == input$sexe, c("hosp", "SI_CHR_2018", "SI_AUTRES_2018")]
+                            , by = as.list(france.df[france.df$sexe == input$sexe, c("DEP" = "dep", "REGION" = "region_name")])
+                            , FUN = last
+                            )
+                    DF <- aggregate(DF[, -c(1:2)], by = list(Region = DF$region_name), FUN = sum)
+                    df_poly <- data.frame(x = c(-Inf, Inf, Inf)
+                                  , y = c(-Inf, Inf, -Inf)
+                                  )
+                    MAX <- max(DF$hosp, DF$SI_CHR_2018+DF$SI_AUTRES_2018)
+              myplot <- ggplot(DF, aes(hosp, SI_CHR_2018+SI_AUTRES_2018))+
+                              #geom_abline(slope = mean(DF$ratio)) +
+                              #geom_abline(slope = 1) +
+                              coord_fixed()+
+                              geom_polygon(data=df_poly, aes(x, y), fill="red", alpha=0.2) +
+                              xlim(0, MAX)+ ylim(0, MAX)+
+                              xlab("Patients COVID")+ ylab("Capacite Totale")+
+                              labs(title = "Saturation en Lits d'Hospitalisation par les patients COVID"
+                                  , subtitle = "Zone Rouge : Regions saturees"
+                                  )+
+                              geom_point(aes(size = hosp, colour = REGION), show.legend = FALSE)+
+                              #geom_text_repel(aes(label = paste(Region, "(", ratio.pct, "%)")), size=3)+
+                              geom_text_repel(aes(label = Region), size=3)+
+                              theme_minimal()
+                      }
+        } else {
+              data_column_x <- input$xyplot_fr_data_x
+              data_column_y <- input$xyplot_fr_data_y
+              ################    ON PEUT ICI PREPARER UNE DF "TOTALE" AVEC BOUCLES POUR AVOIR TOUTES LES DONNEES SOUS LA MAIN....
+                    DF.0 <- setNames(
+                                      aggregate(france.df[france.df$sexe == input$sexe & (france.df$jour > (Sys.Date()-10) & france.df$jour < (Sys.Date()-3)),  "incid"]
+                                              , by = as.list(france.df[france.df$sexe == input$sexe & (france.df$jour > Sys.Date()-10 & france.df$jour < Sys.Date()-3), c("DEP" = "dep", "REGION" = "region_name")])
+                                              , FUN = mean
+                                              )
+                                              , c("dep", "region_name", "J-7")
+                                              )
+
+
+                  DF.0[["J-14"]] <- aggregate(france.df[france.df$sexe == input$sexe & (france.df$jour > Sys.Date()-17 & france.df$jour < Sys.Date()-10),  "incid"]
+                                , by = as.list(france.df[france.df$sexe == input$sexe & (france.df$jour > Sys.Date()-10 & france.df$jour < Sys.Date()-3), c("DEP" = "dep", "REGION" = "region_name")])
+                                , FUN = mean
+                                )$x
+
+                  for (d in c("hosp", "rea", "dc", "pos", "incid")){
+                        DF.0[[d]] <- aggregate(france.df[france.df$sexe == input$sexe,  d]
+                                      , by = as.list(france.df[france.df$sexe == input$sexe, c("DEP" = "dep", "REGION" = "region_name")])
+                                      , FUN = last
+                                      )$x
+                                      }
+                  DF.0$sc <- setNames(
+                              apply(
+                              aggregate(france.df[france.df$sexe == input$sexe,  c("SC_CHR_2018", "SC_AUTRES_2018")]
+                                , by = as.list(france.df[france.df$sexe == input$sexe, c("DEP" = "dep", "REGION" = "region_name")])
+                                , FUN = last
+                                )[, 3:4]
+                                , 1, sum
+                                )
+                                , c("sc")
+                                )
+
+                  DF.0$si <- setNames(
+                              apply(
+                              aggregate(france.df[france.df$sexe == input$sexe,  c("SI_CHR_2018", "SI_AUTRES_2018")]
+                                , by = as.list(france.df[france.df$sexe == input$sexe, c("DEP" = "dep", "REGION" = "region_name")])
+                                , FUN = last
+                                )[, 3:4]
+                                , 1, sum
+                                )
+                                , c("si")
+                                )
+
+                  DF.0$sr <- setNames(
+                              apply(
+                              aggregate(france.df[france.df$sexe == input$sexe,  c("Rea_CHR_2018", "Rea_AUTRES_2018")]
+                                , by = as.list(france.df[france.df$sexe == input$sexe, c("DEP" = "dep", "REGION" = "region_name")])
+                                , FUN = last
+                                )[, 3:4]
+                                , 1, sum
+                                )
+                                , c("sr")
+                                )
+
+              if(input$echelle == "departement"){
+                    DF <- DF.0[, c("dep", "region_name", input$xyplot_fr_data_x, input$xyplot_fr_data_y, input$xyplot_fr_data_z)]
+                    names(DF) <- c("location", "REGION", "X", "Y", "Z")
+
+
+
+
+                    } else if(input$echelle == "region") {
+                    DF <- DF.0[, c("dep", "region_name", input$xyplot_fr_data_x, input$xyplot_fr_data_y, input$xyplot_fr_data_z)]
+                    DF <- aggregate(DF[, -c(1:2)], by = list(Region = DF$region_name), FUN = sum)
+                    names(DF) <- c("location", "X", "Y", "Z")
+                    }
+                    myplot <- ggplot(DF, aes(X, Y))+
+                                    #geom_abline(slope = mean(DF$ratio)) +
+                                    #geom_abline(slope = 1) +
+                                    #coord_fixed()+
+                                    #geom_polygon(data=df_poly, aes(x, y), fill="red", alpha=0.2) +
+                                    #xlim(0, MAX)+ ylim(0, MAX)
+                                #    ylab("Incidence a J-7")+
+                                #    xlab("Patients en reanimation")+
+                                    ylab(input$xyplot_fr_data_y)+
+                                    xlab(input$xyplot_fr_data_x)+
+                                #     labs(title = "Patients en reanimation versus incidence a J-7"
+                                     labs(title = paste(input$xyplot_fr_data_y, "vs", input$xyplot_fr_data_x)
+                                        , subtitle = paste("echelle = ", input$echelle)
+                                        )+
+                                    geom_point(
+                                      aes(
+                                      #size = hosp,
+                                      colour = location
+                                      )
+                                      , size = normalize(DF$Z, method = "scale", range = c(10, 1000))
+                                      , show.legend = FALSE
+                                      )+
+                                    geom_text_repel(aes(label = location)
+                                        , size = 3
+                                        )+
+                                    theme_minimal()
+                }
+
+        }
+}
+
+
+##
+          if(input$map.fr){
                     donnees_monoloc <- rio::import(file = system.file("data/donnees_monoloc.rda", package = "oceanis"))
                     depm <- sf::st_read(dsn = system.file("extdata",
                                                           "dep_francemetro_2018.shp",
@@ -1112,58 +1756,72 @@ output$franceplot <- renderPlot({
                     }
                 }
 
-                if(input$xyplot_fr){
-                    if(input$echelle == "departement"){
-                      DF <- aggregate(france.df[france.df$sexe == input$sexe, c(5:9)]
-                                      , by = as.list(france.df[france.df$sexe == input$sexe, c(1, 3, 10, 11:22)])
-                                      , FUN = last
-                                      )
-                      df_poly <- data.frame(x = c(-Inf, Inf, Inf)
-                                          , y = c(-Inf, Inf, -Inf)
-                                          )
-                      MAX <- max(DF$rea, DF$Rea_CHR_2018+DF$Rea_AUTRES_2018)
-                      #
-                      myplot <- ggplot(DF, aes(rea, Rea_CHR_2018+Rea_AUTRES_2018))+
-                                        #geom_abline(slope = mean(DF$ratio)) +
-                                        #geom_abline(slope = 1) +
-                                        coord_fixed()+
-                                        geom_polygon(data=df_poly, aes(x, y), fill="red", alpha=0.2) +
-                                        xlim(0, MAX)+ ylim(0, MAX)+
-                                        xlab("Patients COVID")+ ylab("Capacite Totale en Lits")+
-                                        labs(title = "Saturation en Lits par les patients COVID"
-                                            , subtitle = "Zone Rouge : Departements satures"
-                                            )+
-                                        geom_point(aes(size = rea, colour = dep), show.legend = FALSE)+
-                                        #geom_text_repel(aes(label = paste(Region, "(", ratio.pct, "%)")), size=3)+
-                                        geom_text_repel(aes(label = dep), size=3)+
-                                        theme_minimal()
-                    } else {
-                      DF <- aggregate(france.df[france.df$sexe == input$sexe, c(5:9)]
-                                      , by = as.list(france.df[france.df$sexe == input$sexe, c(1, 3, 10, 11:22)])
-                                      , FUN = last
-                                      )
-                      DF <- aggregate(DF[, -c(1:2)], by = list(Region = DF$region_name), FUN = sum)
-                      df_poly <- data.frame(x = c(-Inf, Inf, Inf)
-                                          , y = c(-Inf, Inf, -Inf)
-                                          )
-                      MAX <- max(DF$rea, DF$Rea_CHR_2018+DF$Rea_AUTRES_2018)
-                      #
-                      myplot <- ggplot(DF, aes(rea, Rea_CHR_2018+Rea_AUTRES_2018))+
-                                      #geom_abline(slope = mean(DF$ratio)) +
-                                      #geom_abline(slope = 1) +
-                                      coord_fixed()+
-                                      geom_polygon(data=df_poly, aes(x, y), fill="red", alpha=0.2) +
-                                      xlim(0, MAX)+ ylim(0, MAX)+
-                                      xlab("Patients COVID")+ ylab("Capacite Totale")+
-                                      labs(title = "Saturation en Lits par les patients COVID"
-                                          , subtitle = "Zone Rouge : Regions saturees"
+#########################
+
+if(input$type_analyse == FALSE){
+               if(input$type_viz == "courbe_fr"){
+                  if(input$smoothed_fr){
+                        myplot <- myplot+ geom_smooth(
+                               data = DF, aes(x, y, colour = location),
+                               method = "loess"
+                               , size =  input$linewidth_fr
+                               )
+                  } else {
+                        myplot <- myplot+
+        #                      geom_line_interactive(DF, mapping = aes(x, y, colour = location
+        #                        , tooltip = location, data_id = location
+                              geom_line(DF, mapping = aes(x, y, colour = location
+                              )
+                              , size =  input$linewidth_fr
+                              )
+                              }
+                       }
+
+               if(input$type_viz == "xyplot_fr"
+                      #| data_column_fr == "all" | input$type == "xyplot_fr" | input$R0_fr
+                       )
+                       {
+                       myplot <- myplot
+                       }
+                   }
+
+
+if(input$type_analyse == TRUE){
+               if(input$type_comp == "R0_fr") {
+                if(input$xcol == "rea"){
+                           EST <- "'patients en reanimation pour COVID'"
+                           }
+                if(input$xcol == "hosp"){
+                           EST <- "'patients hospitalises pour COVID'"
+                           }
+                if(input$xcol == "pos"){
+                           EST <- "'nombre de tests positifs au COVID'"
+                           }
+                if(input$xcol == "dc"){
+                           EST <- "'patients decedes du COVID'"
+                           }
+                 myplot <- ggplot(data = RES, aes(x = J, y = R0_point, colour = location))+
+                             geom_line(size = 1)+
+                             geom_ribbon(aes(ymin = R0_low, ymax = R0_high, colour = location), linetype = 2, alpha = 0.1)+
+                             xlim(0, NA)+
+                             ylim(-1, NA)+
+                             geom_hline(
+                             yintercept = 1, linetype = 5, colour = "black",
+                             )+
+                             geom_text(aes(min(J), 1, label = "R0 = 1", vjust = -1), colour = "black")+
+                             ggtitle("Estimation du R0 sur fenêtres glissantes"
+                             , subtitle = paste(
+                                              "calcul base sur l'indicateur"
+                                              , EST
+                                              )
                                           )+
-                                      geom_point(aes(size = rea, colour = Region), show.legend = FALSE)+
-                                      #geom_text_repel(aes(label = paste(Region, "(", ratio.pct, "%)")), size=3)+
-                                      geom_text_repel(aes(label = Region), size=3)+
-                                      theme_minimal()
-                    }
-                }
+                             labs(x = "Temps (du passe a aujourd'hui) en jours", y = "Estimation du Nombre  Basique de Reproduction (R0)")+
+                             xlim(-length(unique(RES$J)), 0)+
+                             theme_minimal()
+
+                             }
+                            }
+
 
 
                 if(input$log_fr){
